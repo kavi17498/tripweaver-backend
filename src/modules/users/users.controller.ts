@@ -15,6 +15,11 @@ import {
   ApiResponse,
   ApiParam,
   ApiBody,
+  ApiSecurity,
+  ApiBadRequestResponse,
+  ApiConflictResponse,
+  ApiNotFoundResponse,
+  ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -22,6 +27,9 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { User } from './entities/user.entity';
 
 @ApiTags('users')
+@ApiSecurity('firebase-token')
+@ApiBadRequestResponse({ description: 'Invalid request body or validation failed' })
+@ApiUnauthorizedResponse({ description: 'Missing or invalid Firebase token' })
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
@@ -32,15 +40,32 @@ export class UsersController {
    */
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Create a new user' })
+  @ApiOperation({
+    summary: 'Create a new user',
+    description: 'Create a new user account with personal information and address details. All users are created with isVerified set to false by default.',
+  })
   @ApiBody({ type: CreateUserDto })
   @ApiResponse({
     status: 201,
     description: 'User created successfully',
     type: User,
+    example: {
+      id: 'user_12345',
+      firstName: 'John',
+      lastName: 'Doe',
+      email: 'john@example.com',
+      phone: '+1234567890',
+      street: '123 Main St',
+      city: 'New York',
+      state: 'NY',
+      postalCode: '10001',
+      country: 'USA',
+      isVerified: false,
+      createdAt: '2026-03-20T10:30:00Z',
+      updatedAt: '2026-03-20T10:30:00Z',
+    },
   })
-  @ApiResponse({ status: 400, description: 'Invalid input' })
-  @ApiResponse({ status: 409, description: 'User with this email already exists' })
+  @ApiConflictResponse({ description: 'User with this email already exists' })
   async create(@Body() createUserDto: CreateUserDto): Promise<User> {
     return this.usersService.create(createUserDto);
   }
@@ -50,10 +75,13 @@ export class UsersController {
    * GET /users
    */
   @Get()
-  @ApiOperation({ summary: 'Get all users' })
+  @ApiOperation({
+    summary: 'Get all users',
+    description: 'Retrieve a list of all registered users in the system.',
+  })
   @ApiResponse({
     status: 200,
-    description: 'List of all users',
+    description: 'List of all users retrieved successfully',
     type: [User],
   })
   async findAll(): Promise<User[]> {
@@ -65,7 +93,10 @@ export class UsersController {
    * GET /users/verified
    */
   @Get('verified')
-  @ApiOperation({ summary: 'Get all verified users' })
+  @ApiOperation({
+    summary: 'Get all verified users',
+    description: 'Retrieve a list of all users who have been verified (isVerified = true).',
+  })
   @ApiResponse({
     status: 200,
     description: 'List of verified users',
@@ -80,14 +111,17 @@ export class UsersController {
    * GET /users/:id
    */
   @Get(':id')
-  @ApiOperation({ summary: 'Get a user by ID' })
-  @ApiParam({ name: 'id', description: 'User ID' })
+  @ApiOperation({
+    summary: 'Get a user by ID',
+    description: 'Retrieve detailed information for a specific user by their user ID.',
+  })
+  @ApiParam({ name: 'id', description: 'Unique user identifier', example: 'user_12345' })
   @ApiResponse({
     status: 200,
-    description: 'User found',
+    description: 'User found and returned',
     type: User,
   })
-  @ApiResponse({ status: 404, description: 'User not found' })
+  @ApiNotFoundResponse({ description: 'User with specified ID not found' })
   async findOne(@Param('id') id: string): Promise<User> {
     return this.usersService.findOne(id);
   }
@@ -97,16 +131,19 @@ export class UsersController {
    * PUT /users/:id
    */
   @Put(':id')
-  @ApiOperation({ summary: 'Update a user' })
-  @ApiParam({ name: 'id', description: 'User ID' })
+  @ApiOperation({
+    summary: 'Update a user',
+    description: 'Update user information. All fields are optional - only provide fields you want to modify.',
+  })
+  @ApiParam({ name: 'id', description: 'Unique user identifier', example: 'user_12345' })
   @ApiBody({ type: UpdateUserDto })
   @ApiResponse({
     status: 200,
     description: 'User updated successfully',
     type: User,
   })
-  @ApiResponse({ status: 404, description: 'User not found' })
-  @ApiResponse({ status: 409, description: 'Email already exists' })
+  @ApiNotFoundResponse({ description: 'User not found' })
+  @ApiConflictResponse({ description: 'Email already exists for another user' })
   async update(
     @Param('id') id: string,
     @Body() updateUserDto: UpdateUserDto,
@@ -120,10 +157,13 @@ export class UsersController {
    */
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Delete a user' })
-  @ApiParam({ name: 'id', description: 'User ID' })
+  @ApiOperation({
+    summary: 'Delete a user',
+    description: 'Permanently delete a user account and all associated data.',
+  })
+  @ApiParam({ name: 'id', description: 'Unique user identifier', example: 'user_12345' })
   @ApiResponse({ status: 204, description: 'User deleted successfully' })
-  @ApiResponse({ status: 404, description: 'User not found' })
+  @ApiNotFoundResponse({ description: 'User not found' })
   async remove(@Param('id') id: string): Promise<void> {
     return this.usersService.remove(id);
   }
