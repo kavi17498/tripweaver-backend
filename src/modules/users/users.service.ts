@@ -1,0 +1,162 @@
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+} from '@nestjs/common';
+import { FirebaseService } from '../../firebase/firebase.service';
+import { User } from './entities/user.entity';
+import { CreateUserDto } from './dto/create-user.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
+
+@Injectable()
+export class UsersService {
+  private readonly collectionName = 'users';
+
+  constructor(private firebaseService: FirebaseService) {}
+
+  /**
+   * Create a new user
+   */
+  async create(createUserDto: CreateUserDto): Promise<User> {
+    const db = this.firebaseService.getFirestore();
+
+    // Check if user with email already exists
+    const existingUser = await db
+      .collection(this.collectionName)
+      .where('email', '==', createUserDto.email)
+      .get();
+
+    if (!existingUser.empty) {
+      throw new ConflictException('User with this email already exists');
+    }
+
+    const newUser: User = {
+      ...createUserDto,
+      isVerified: createUserDto.isVerified || false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    const docRef = await db.collection(this.collectionName).add(newUser);
+    const id = docRef.id;
+
+    return { ...newUser, id };
+  }
+
+  /**
+   * Get all users
+   */
+  async findAll(): Promise<User[]> {
+    const db = this.firebaseService.getFirestore();
+    const snapshot = await db.collection(this.collectionName).get();
+
+    const users: User[] = [];
+    snapshot.forEach((doc) => {
+      users.push({ id: doc.id, ...doc.data() } as User);
+    });
+
+    return users;
+  }
+
+  /**
+   * Get a single user by ID
+   */
+  async findOne(id: string): Promise<User> {
+    const db = this.firebaseService.getFirestore();
+    const doc = await db.collection(this.collectionName).doc(id).get();
+
+    if (!doc.exists) {
+      throw new NotFoundException(`User with ID ${id} not found`);
+    }
+
+    return { id: doc.id, ...doc.data() } as User;
+  }
+
+  /**
+   * Get a user by email
+   */
+  async findByEmail(email: string): Promise<User | null> {
+    const db = this.firebaseService.getFirestore();
+    const snapshot = await db
+      .collection(this.collectionName)
+      .where('email', '==', email)
+      .get();
+
+    if (snapshot.empty) {
+      return null;
+    }
+
+    const doc = snapshot.docs[0];
+    return { id: doc.id, ...doc.data() } as User;
+  }
+
+  /**
+   * Update a user
+   */
+  async update(id: string, updateUserDto: UpdateUserDto): Promise<User> {
+    const db = this.firebaseService.getFirestore();
+
+    // Check if user exists
+    const doc = await db.collection(this.collectionName).doc(id).get();
+    if (!doc.exists) {
+      throw new NotFoundException(`User with ID ${id} not found`);
+    }
+
+    // Check if email is being changed and if it already exists
+    if (updateUserDto.email) {
+      const existingUser = await db
+        .collection(this.collectionName)
+        .where('email', '==', updateUserDto.email)
+        .get();
+
+      if (
+        !existingUser.empty &&
+        existingUser.docs[0].id !== id
+      ) {
+        throw new ConflictException('User with this email already exists');
+      }
+    }
+
+    const updateData = {
+      ...updateUserDto,
+      updatedAt: new Date(),
+    };
+
+    await db.collection(this.collectionName).doc(id).update(updateData);
+
+    return this.findOne(id);
+  }
+
+  /**
+   * Delete a user
+   */
+  async remove(id: string): Promise<void> {
+    const db = this.firebaseService.getFirestore();
+
+    // Check if user exists
+    const doc = await db.collection(this.collectionName).doc(id).get();
+    if (!doc.exists) {
+      throw new NotFoundException(`User with ID ${id} not found`);
+    }
+
+    await db.collection(this.collectionName).doc(id).delete();
+  }
+
+  /**
+   * Get verified users
+   */
+  async findVerified(): Promise<User[]> {
+    const db = this.firebaseService.getFirestore();
+    const snapshot = await db
+      .collection(this.collectionName)
+      .where('isVerified', '==', true)
+      .get();
+
+    const users: User[] = [];
+    snapshot.forEach((doc) => {
+      users.push({ id: doc.id, ...doc.data() } as User);
+    });
+
+    return users;
+  }
+}
