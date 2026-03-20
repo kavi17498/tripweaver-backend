@@ -44,7 +44,7 @@ export class TripsController {
   @ApiOperation({
     summary: 'Create a new trip',
     description:
-      'Create a new trip with comprehensive details including destinations, itinerary, pricing, and included services. Required: organizer must be a valid user ID.',
+      'Create a new trip with comprehensive details including destinations, itinerary, pricing, included services, a photo gallery, and a separate cover image. Required: organizer must be a valid user ID.',
   })
   @ApiBody({ type: CreateTripDto })
   @ApiResponse({
@@ -197,7 +197,7 @@ export class TripsController {
   @Put(':id')
   @ApiOperation({
     summary: 'Update a trip',
-    description: 'Modify trip details. All fields are optional - only provide fields you want to update.',
+    description: 'Modify trip details. All fields are optional - only provide fields you want to update. You can update the photos gallery and cover image separately.',
   })
   @ApiParam({
     name: 'id',

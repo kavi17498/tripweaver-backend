@@ -83,20 +83,33 @@ export class CreateTripDto {
   participants?: Participant[];
 
   @ApiPropertyOptional({
+    description: 'Gallery photos for the trip and destinations',
+    type: [String],
+    example: [
+      'https://example.com/trip-1.jpg',
+      'https://example.com/trip-2.jpg',
+      'https://example.com/trip-3.jpg',
+    ],
+  })
+  @IsOptional()
+  @IsArray()
+  photos?: string[];
+
+  @ApiPropertyOptional({
+    description: 'Cover image selected from the photos array',
+    example: 'https://example.com/trip-cover.jpg',
+  })
+  @IsOptional()
+  @IsString()
+  coverImage?: string;
+
+  @ApiPropertyOptional({
     description: 'Trip description',
     example: 'An amazing trip to explore Sri Lanka',
   })
   @IsOptional()
   @IsString()
   description?: string;
-
-  @ApiPropertyOptional({
-    description: 'Cover photo URL',
-    example: 'https://example.com/trip-cover.jpg',
-  })
-  @IsOptional()
-  @IsString()
-  coverPhoto?: string;
 
   @ApiPropertyOptional({
     description: 'Maximum participants allowed',

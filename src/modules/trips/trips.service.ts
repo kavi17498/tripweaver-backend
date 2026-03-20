@@ -28,8 +28,13 @@ export class TripsService {
       throw new BadRequestException('End date must be after start date');
     }
 
+    const photos = createTripDto.photos ?? [];
+    const coverImage = createTripDto.coverImage ?? photos[0];
+
     const newTrip: Trip = {
       ...createTripDto,
+      photos,
+      coverImage,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -129,6 +134,12 @@ export class TripsService {
 
     const updateData = {
       ...updateTripDto,
+      photos: updateTripDto.photos,
+      coverImage:
+        updateTripDto.coverImage ??
+        (updateTripDto.photos && updateTripDto.photos.length > 0
+          ? updateTripDto.photos[0]
+          : undefined),
       updatedAt: new Date(),
     };
 

@@ -65,18 +65,30 @@ export class Trip {
   participants?: Participant[];
 
   @ApiProperty({
+    description: 'Gallery photos for the trip and destinations',
+    type: [String],
+    example: [
+      'https://example.com/trip-1.jpg',
+      'https://example.com/trip-2.jpg',
+      'https://example.com/trip-3.jpg',
+    ],
+    required: false,
+  })
+  photos?: string[];
+
+  @ApiProperty({
+    description: 'Cover image selected from the photos array',
+    example: 'https://example.com/trip-cover.jpg',
+    required: false,
+  })
+  coverImage?: string;
+
+  @ApiProperty({
     description: 'Trip description',
     example: 'An amazing trip to explore Sri Lanka',
     required: false,
   })
   description?: string;
-
-  @ApiProperty({
-    description: 'Cover photo URL',
-    example: 'https://example.com/trip-cover.jpg',
-    required: false,
-  })
-  coverPhoto?: string;
 
   @ApiProperty({
     description: 'Maximum participants allowed',
