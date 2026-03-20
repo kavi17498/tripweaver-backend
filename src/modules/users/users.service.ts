@@ -19,6 +19,13 @@ export class UsersService {
    */
   async create(createUserDto: CreateUserDto): Promise<User> {
     const db = this.firebaseService.getFirestore();
+    const userDocRef = db.collection(this.collectionName).doc(createUserDto.id);
+
+    // Check if user with this ID already exists
+    const existingById = await userDocRef.get();
+    if (existingById.exists) {
+      throw new ConflictException('User with this ID already exists');
+    }
 
     // Check if user with email already exists
     const existingUser = await db
@@ -37,10 +44,9 @@ export class UsersService {
       updatedAt: new Date(),
     };
 
-    const docRef = await db.collection(this.collectionName).add(newUser);
-    const id = docRef.id;
+    await userDocRef.set(newUser);
 
-    return { ...newUser, id };
+    return { ...newUser, id: createUserDto.id };
   }
 
   /**
