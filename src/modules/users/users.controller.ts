@@ -10,7 +10,6 @@ import {
   HttpStatus,
   Req,
   UnauthorizedException,
-  ForbiddenException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -114,6 +113,37 @@ export class UsersController {
   })
   async findVerified(): Promise<User[]> {
     return this.usersService.findVerified();
+  }
+
+  /**
+   * Check current authenticated user role
+   * GET /users/checkuserrole
+   */
+  @Get('checkuserrole')
+  @ApiOperation({
+    summary: 'Check current user role',
+    description:
+      'Returns only the role from Firebase custom claims for the authenticated user. Returns null when role is not set.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Current user role returned successfully',
+    schema: {
+      example: {
+        role: 'superadmin',
+      },
+    },
+  })
+  async checkUserRole(
+    @Req() request: AuthenticatedRequest,
+  ): Promise<{ role: string | null }> {
+    const uid = request.user?.uid || request.user?.sub;
+
+    if (!uid) {
+      throw new UnauthorizedException('Unable to extract user identity from token');
+    }
+
+    return this.usersService.getCurrentUserRole(uid);
   }
 
   /**

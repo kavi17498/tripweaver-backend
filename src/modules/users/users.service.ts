@@ -170,6 +170,31 @@ export class UsersService {
   }
 
   /**
+   * Return current user role from Firebase custom claims
+   */
+  async getCurrentUserRole(uid: string): Promise<{ role: string | null }> {
+    const auth = this.firebaseService.getAuth();
+
+    try {
+      const user = await auth.getUser(uid);
+      const role =
+        typeof user.customClaims?.role === 'string'
+          ? user.customClaims.role
+          : null;
+
+      return { role };
+    } catch (error: unknown) {
+      const firebaseError = error as { code?: string };
+
+      if (firebaseError?.code === 'auth/user-not-found') {
+        throw new NotFoundException(`Auth user with ID ${uid} not found`);
+      }
+
+      throw new InternalServerErrorException('Failed to fetch current user role');
+    }
+  }
+
+  /**
    * Set role=superadmin in Firebase custom claims for a specific UID
    */
   async setSelfAsSuperadmin(uid: string): Promise<{ status: 'success' }> {
