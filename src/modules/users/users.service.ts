@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
+  InternalServerErrorException,
 } from '@nestjs/common';
 import { FirebaseService } from '../../firebase/firebase.service';
 import { User } from './entities/user.entity';
@@ -164,5 +165,34 @@ export class UsersService {
     });
 
     return users;
+  }
+
+  /**
+   * Set role=superadmin in Firebase custom claims for a specific UID
+   */
+  async setSelfAsSuperadmin(uid: string): Promise<{ status: 'success' }> {
+    const auth = this.firebaseService.getAuth();
+
+    try {
+      const user = await auth.getUser(uid);
+      const currentCustomClaims = user.customClaims || {};
+
+      await auth.setCustomUserClaims(uid, {
+        ...currentCustomClaims,
+        role: 'superadmin',
+      });
+
+      return { status: 'success' };
+    } catch (error: unknown) {
+      const firebaseError = error as { code?: string };
+
+      if (firebaseError?.code === 'auth/user-not-found') {
+        throw new NotFoundException(`Auth user with ID ${uid} not found`);
+      }
+
+      throw new InternalServerErrorException(
+        'Failed to set superadmin custom claim',
+      );
+    }
   }
 }

@@ -8,6 +8,8 @@ import {
   Delete,
   HttpCode,
   HttpStatus,
+  Req,
+  UnauthorizedException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -21,10 +23,18 @@ import {
   ApiNotFoundResponse,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import { Request } from 'express';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { User } from './entities/user.entity';
+
+type AuthenticatedRequest = Request & {
+  user?: {
+    uid?: string;
+    sub?: string;
+  };
+};
 
 @ApiTags('users')
 @ApiSecurity('firebase-token')
@@ -166,5 +176,37 @@ export class UsersController {
   @ApiNotFoundResponse({ description: 'User not found' })
   async remove(@Param('id') id: string): Promise<void> {
     return this.usersService.remove(id);
+  }
+
+  /**
+   * Set superadmin role for the authenticated user
+   * POST /users/set-custom-claims/superadmin
+   */
+  @Post('set-custom-claims/superadmin')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Set role=superadmin from current token',
+    description:
+      'Sets Firebase custom claim role=superadmin for the authenticated user extracted from the bearer token. Client must refresh token after success.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Custom claim updated successfully',
+    schema: {
+      example: {
+        status: 'success',
+      },
+    },
+  })
+  async setCustomClaimsSuperadmin(
+    @Req() request: AuthenticatedRequest,
+  ): Promise<{ status: 'success' }> {
+    const uid = request.user?.uid || request.user?.sub;
+
+    if (!uid) {
+      throw new UnauthorizedException('Unable to extract user identity from token');
+    }
+
+    return this.usersService.setSelfAsSuperadmin(uid);
   }
 }
