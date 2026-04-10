@@ -286,7 +286,7 @@ export class UsersController {
 
     return this.usersService.assignRolesToUsers(
       currentUid,
-      assignRoleDto.userIds,
+      assignRoleDto.userIds?.length ? assignRoleDto.userIds : assignRoleDto.userId,
       assignRoleDto.role,
     );
   }

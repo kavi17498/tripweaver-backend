@@ -1,4 +1,10 @@
-import { IsNotEmpty, IsString, IsArray, MinLength } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsString,
+  IsArray,
+  ArrayMinSize,
+  IsOptional,
+} from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 
@@ -19,7 +25,8 @@ export class AssignRoleDto {
     return Array.isArray(value) ? value : [value];
   })
   @IsArray()
-  @MinLength(1)
+  @ArrayMinSize(1)
+  @IsString({ each: true })
   userIds: string[] = [];
 
   @ApiProperty({
@@ -29,4 +36,9 @@ export class AssignRoleDto {
   @IsNotEmpty()
   @IsString()
   role: string = '';
+
+  // Backward compatibility for clients sending userId instead of userIds
+  @IsOptional()
+  @IsString()
+  userId?: string;
 }

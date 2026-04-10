@@ -230,7 +230,7 @@ export class UsersService {
    */
   async assignRolesToUsers(
     currentUid: string,
-    userIds: string[],
+    userIdsInput: string[] | string | undefined,
     role: string,
   ): Promise<{
     status: 'success';
@@ -268,10 +268,28 @@ export class UsersService {
       throw new BadRequestException('Role must be a non-empty string');
     }
 
+    const userIds = Array.isArray(userIdsInput)
+      ? userIdsInput
+      : typeof userIdsInput === 'string'
+        ? [userIdsInput]
+        : [];
+
+    const normalizedUserIds = [
+      ...new Set(
+        userIds
+          .map((userId) => userId?.trim())
+          .filter((userId): userId is string => !!userId),
+      ),
+    ];
+
+    if (normalizedUserIds.length === 0) {
+      throw new BadRequestException('userIds must contain at least one user ID');
+    }
+
     const assigned: string[] = [];
     const failed: Array<{ userId: string; reason: string }> = [];
 
-    for (const userId of userIds) {
+    for (const userId of normalizedUserIds) {
       // Skip current user - keep them as superadmin
       if (userId === currentUid) {
         continue;
