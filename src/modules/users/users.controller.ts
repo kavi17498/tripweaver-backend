@@ -10,6 +10,7 @@ import {
   HttpStatus,
   Req,
   UnauthorizedException,
+  ForbiddenException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -25,8 +26,7 @@ import {
 } from '@nestjs/swagger';
 import { Request } from 'express';
 import { UsersService } from './users.service';
-import { CreateUserDto } from './dto/create-user.dto';
-import { UpdateUserDto } from './dto/update-user.dto';
+import { CreateUserDto, UpdateUserDto, AssignRoleDto } from './dto';
 import { User } from './entities/user.entity';
 
 type AuthenticatedRequest = Request & {
@@ -208,5 +208,56 @@ export class UsersController {
     }
 
     return this.usersService.setSelfAsSuperadmin(uid);
+  }
+
+  /**
+   * Assign roles to users (superadmin only)
+   * POST /users/assign-roles
+   */
+  @Post('assign-roles')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Assign role to one or multiple users',
+    description:
+      'Superadmin users can assign roles to other users. Current user is skipped if included. Accepts single userId (string) or multiple userIds (array) with a role name.',
+  })
+  @ApiBody({ type: AssignRoleDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Role assignment completed',
+    schema: {
+      example: {
+        status: 'success',
+        assigned: ['user_123', 'user_456'],
+        failed: [
+          {
+            userId: 'user_789',
+            reason: 'User not found in Firebase Auth',
+          },
+        ],
+      },
+    },
+  })
+  @ApiBadRequestResponse({ description: 'Invalid request: invalid userIds or role format' })
+  @ApiUnauthorizedResponse({ description: 'Missing or invalid token' })
+  async assignRoles(
+    @Req() request: AuthenticatedRequest,
+    @Body() assignRoleDto: AssignRoleDto,
+  ): Promise<{
+    status: 'success';
+    assigned: string[];
+    failed: Array<{ userId: string; reason: string }>;
+  }> {
+    const currentUid = request.user?.uid || request.user?.sub;
+
+    if (!currentUid) {
+      throw new UnauthorizedException('Unable to extract user identity from token');
+    }
+
+    return this.usersService.assignRolesToUsers(
+      currentUid,
+      assignRoleDto.userIds,
+      assignRoleDto.role,
+    );
   }
 }

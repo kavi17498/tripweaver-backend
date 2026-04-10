@@ -3,6 +3,8 @@ import {
   NotFoundException,
   ConflictException,
   InternalServerErrorException,
+  ForbiddenException,
+  BadRequestException,
 } from '@nestjs/common';
 import { FirebaseService } from '../../firebase/firebase.service';
 import { User } from './entities/user.entity';
@@ -194,5 +196,90 @@ export class UsersService {
         'Failed to set superadmin custom claim',
       );
     }
+  }
+
+  /**
+   * Assign role to one or multiple users (superadmin only)
+   * Current user must have role=superadmin in their custom claims
+   * Current user is skipped (keeps their superadmin role)
+   */
+  async assignRolesToUsers(
+    currentUid: string,
+    userIds: string[],
+    role: string,
+  ): Promise<{
+    status: 'success';
+    assigned: string[];
+    failed: Array<{ userId: string; reason: string }>;
+  }> {
+    const auth = this.firebaseService.getAuth();
+
+    // Verify current user is superadmin
+    try {
+      const currentUser = await auth.getUser(currentUid);
+      const currentRole = currentUser.customClaims?.role;
+
+      if (currentRole !== 'superadmin') {
+        throw new ForbiddenException(
+          'Only superadmin users can assign roles to other users',
+        );
+      }
+    } catch (error: unknown) {
+      const firebaseError = error as { code?: string };
+
+      if (firebaseError?.code === 'auth/user-not-found') {
+        throw new NotFoundException(`Current auth user ${currentUid} not found`);
+      }
+
+      if (error instanceof ForbiddenException) {
+        throw error;
+      }
+
+      throw new InternalServerErrorException('Failed to verify superadmin status');
+    }
+
+    // Validate role is a non-empty string
+    if (!role || typeof role !== 'string' || role.trim().length === 0) {
+      throw new BadRequestException('Role must be a non-empty string');
+    }
+
+    const assigned: string[] = [];
+    const failed: Array<{ userId: string; reason: string }> = [];
+
+    for (const userId of userIds) {
+      // Skip current user - keep them as superadmin
+      if (userId === currentUid) {
+        continue;
+      }
+
+      try {
+        const user = await auth.getUser(userId);
+        const existingClaims = user.customClaims || {};
+
+        await auth.setCustomUserClaims(userId, {
+          ...existingClaims,
+          role: role.trim(),
+        });
+
+        assigned.push(userId);
+      } catch (error: unknown) {
+        const firebaseError = error as { code?: string };
+
+        let reason = 'Unknown error';
+        if (firebaseError?.code === 'auth/user-not-found') {
+          reason = 'User not found in Firebase Auth';
+        } else if (firebaseError instanceof Error) {
+          reason = firebaseError.message;
+        }
+
+        failed.push({ userId, reason });
+      }
+    }
+
+    return {
+      status: 'success',
+      assigned,
+      failed,
+    };
   }
 }
