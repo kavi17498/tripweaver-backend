@@ -1,9 +1,17 @@
 import { NestFactory } from '@nestjs/core';
+import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      transform: true,
+      forbidNonWhitelisted: true,
+    }),
+  );
   app.enableCors({
     origin: 'http://localhost:3000',
   });
@@ -45,6 +53,7 @@ async function bootstrap() {
     )
     .addTag('users', 'User Management - Register, login, and manage user profiles')
     .addTag('trips', 'Trip Management - Create and manage travel experiences')
+    .addTag('itinerary', 'Itinerary Generation - Build day-by-day plans')
     .addSecurityRequirements('firebase-token')
     .build();
 
