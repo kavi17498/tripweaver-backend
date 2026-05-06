@@ -3,7 +3,9 @@ import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
 import { CreateTripPlanRequestDto } from './dto/create-trip-plan-request.dto';
+import { AutoItineraryRequestDto } from './dto/auto-itinerary-request.dto';
 import { LocationsRequestDto } from './dto/locations-request.dto';
+import { AutoItineraryResponse } from './entities/auto-itinerary-response.entity';
 import { LocationDestinationsResponse } from './entities/locations-response.entity';
 import { TripPlan, TripPlanLocationPlan, TripPlanPlace } from './entities/tripplan.entity';
 
@@ -88,6 +90,63 @@ export class TripPlannerService {
                      location: locations[index],
                      destinations,
               }));
+       }
+
+       async generateAutoItinerary(
+              dto: AutoItineraryRequestDto,
+       ): Promise<AutoItineraryResponse> {
+              const apiKey = this.configService.get<string>('LLM_API_KEY');
+              const baseUrl =
+                     this.configService.get<string>('LLM_BASE_URL') ??
+                     'https://generativelanguage.googleapis.com/v1beta';
+              const model = this.configService.get<string>('LLM_MODEL') ?? 'gemini-2.5-flash';
+
+              if (!apiKey) {
+                     throw new HttpException('LLM API key not configured', HttpStatus.BAD_REQUEST);
+              }
+
+              const prompt = this.buildAutoItineraryPrompt(dto);
+
+              try {
+                     const response = await firstValueFrom(
+                            this.httpService.post(
+                                   `${baseUrl.replace(/\/$/, '')}/models/${model}:generateContent?key=${apiKey}`,
+                                   {
+                                          contents: [
+                                                 {
+                                                        role: 'user',
+                                                        parts: [{ text: prompt }],
+                                                 },
+                                          ],
+                                          generationConfig: {
+                                                 temperature: 0.4,
+                                                 responseMimeType: 'application/json',
+                                          },
+                                   },
+                                   {
+                                          headers: {
+                                                 'Content-Type': 'application/json',
+                                          },
+                                   },
+                            ),
+                     );
+
+                     const content =
+                            response.data?.candidates?.[0]?.content?.parts?.[0]?.text ?? null;
+                     if (typeof content !== 'string') {
+                            throw new Error('LLM response missing content');
+                     }
+
+                     const parsed = this.safeParseJson<AutoItineraryResponse>(content);
+                     if (!parsed?.days || !Array.isArray(parsed.days)) {
+                            throw new Error('Invalid itinerary format');
+                     }
+
+                     return parsed;
+              } catch (error) {
+                     this.logger.error('Auto itinerary generation failed', error as Error);
+                     throw new HttpException('Failed to generate itinerary', HttpStatus.BAD_GATEWAY);
+              }
        }
 
        private getTotalTripDays(startDate: Date, endDate: Date): number {
@@ -201,5 +260,44 @@ export class TripPlannerService {
                             HttpStatus.BAD_GATEWAY,
                      );
               }
+       }
+
+       private buildAutoItineraryPrompt(dto: AutoItineraryRequestDto): string {
+              return [
+                     'Generate a day-by-day itinerary as strictly valid JSON only.',
+                     'Output schema:',
+                     '{"tripName":"","days":[{"day":1,"date":"YYYY-MM-DD","location":"","activities":[{"startTime":"08:00 AM","endTime":"10:00 AM","activity":"","location":"","description":""}]}]}',
+                     '',
+                     `Trip name: ${dto.tripName}.`,
+                     `Trip category: ${dto.tripCategory}.`,
+                     `Start date: ${dto.startDate}.`,
+                     `End date: ${dto.endDate}.`,
+                     `Daily start time: ${dto.startTime}.`,
+                     `Daily end time: ${dto.endTime}.`,
+                     `Start location: ${dto.startLocation}.`,
+                     `Max participants: ${dto.maxParticipants}.`,
+                     'Destinations:',
+                     JSON.stringify(dto.destinations),
+                     'Included:',
+                     JSON.stringify(dto.included),
+                     '',
+                     'Rules:',
+                     '- Use only the provided destinations.',
+                     '- Create activities between the daily start and end time.',
+                     '- Include travel time or breaks if needed.',
+                     '- Return JSON only, no markdown, no commentary.',
+              ].join('\n');
+       }
+
+       private safeParseJson<T>(content: string): T {
+              const trimmed = content.trim();
+              const start = trimmed.indexOf('{');
+              const end = trimmed.lastIndexOf('}');
+              if (start === -1 || end === -1) {
+                     throw new Error('No JSON object found');
+              }
+
+              const jsonText = trimmed.slice(start, end + 1);
+              return JSON.parse(jsonText) as T;
        }
 }
