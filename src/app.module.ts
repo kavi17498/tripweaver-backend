@@ -8,6 +8,7 @@ import { UsersModule } from './modules/users/users.module';
 import { TripsModule } from './modules/trips/trips.module';
 import { TripPlannerModule } from './modules/tripPlaner/tripplanner.module';
 import { FirebaseAuthGuard } from './auth/firebase-auth.guard';
+import { ItineraryModule } from './modules/itinerary/itinerary.module';
 
 @Module({
   imports: [
