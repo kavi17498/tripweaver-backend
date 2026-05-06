@@ -6,11 +6,18 @@ import { AppService } from './app.service';
 import { FirebaseModule } from './firebase/firebase.module';
 import { UsersModule } from './modules/users/users.module';
 import { TripsModule } from './modules/trips/trips.module';
+import { TripPlannerModule } from './modules/tripPlaner/tripplanner.module';
 import { FirebaseAuthGuard } from './auth/firebase-auth.guard';
 import { ItineraryModule } from './modules/itinerary/itinerary.module';
 
 @Module({
-  imports: [ConfigModule.forRoot({ isGlobal: true }), FirebaseModule, UsersModule, TripsModule, ItineraryModule],
+  imports: [
+    ConfigModule.forRoot({ isGlobal: true }),
+    FirebaseModule,
+    UsersModule,
+    TripsModule,
+    TripPlannerModule,
+  ],
   controllers: [AppController],
   providers: [
     AppService,
