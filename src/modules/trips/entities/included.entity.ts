@@ -1,35 +1,44 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { IsArray, IsOptional, IsString } from 'class-validator';
 
 export class Included {
   @ApiProperty({
-    description: 'Hotel facilities included',
+    description: 'Hotel/accommodation facilities',
     type: [String],
-    example: ['3-star hotel', 'Air conditioning', 'WiFi'],
-    required: false,
+    example: ['Pitza Hotel', 'Beachside Resort'],
   })
-  hotelFacilities?: string[];
+  @IsArray()
+  @IsString({ each: true })
+  hotelFacilities!: string[];
 
   @ApiProperty({
-    description: 'Transport facilities included',
+    description: 'Transport facilities',
     type: [String],
-    example: ['Air-conditioned coach', 'Airport transfers', 'Daily transport'],
-    required: false,
+    example: ['Train', 'Bus'],
   })
-  transportFacilities?: string[];
+  @IsArray()
+  @IsString({ each: true })
+  transportFacilities!: string[];
 
   @ApiProperty({
     description: 'Other inclusions',
     type: [String],
-    example: ['Breakfast', 'Guided tours', 'Entrance fees'],
+    example: ['Breakfast', 'Guide service', 'Insurance'],
     required: false,
   })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
   otherInclusions?: string[];
 
   @ApiProperty({
     description: 'Exclusions',
     type: [String],
-    example: ['Visa fees', 'Personal expenses', 'Meals not mentioned'],
+    example: ['Flights', 'Personal expenses'],
     required: false,
   })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
   exclusions?: string[];
 }

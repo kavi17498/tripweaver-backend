@@ -7,6 +7,7 @@ import { FirebaseService } from '../../firebase/firebase.service';
 import { Trip } from './entities/trip.entity';
 import { CreateTripDto } from './dto/create-trip.dto';
 import { UpdateTripDto } from './dto/update-trip.dto';
+import { TripStatus } from './entities/trip-status.enum';
 
 @Injectable()
 export class TripsService {
@@ -35,6 +36,7 @@ export class TripsService {
       ...createTripDto,
       photos,
       coverImage,
+      status: TripStatus.DRAFT,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
