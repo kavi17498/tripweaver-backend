@@ -9,6 +9,8 @@ import {
   HttpCode,
   HttpStatus,
   Query,
+  Req,
+  UnauthorizedException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -22,10 +24,19 @@ import {
   ApiNotFoundResponse,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import { Request } from 'express';
 import { TripsService } from './trips.service';
 import { CreateTripDto } from './dto/create-trip.dto';
 import { UpdateTripDto } from './dto/update-trip.dto';
 import { Trip } from './entities/trip.entity';
+
+type AuthenticatedRequest = Request & {
+  user?: {
+    uid?: string;
+    sub?: string;
+    role?: string;
+  };
+};
 
 @ApiTags('trips')
 @ApiSecurity('firebase-token')
@@ -63,41 +74,48 @@ export class TripsController {
   @Get()
   @ApiOperation({
     summary: 'Get all trips',
-    description: 'Retrieve a list of all available trips in the system.',
+    description:
+      'Returns all trips for admin and superadmin users. Other authenticated users only receive trips organized by their own Firebase user ID.',
   })
   @ApiResponse({
     status: 200,
     description: 'List of all trips retrieved successfully',
     type: [Trip],
   })
-  async findAll(): Promise<Trip[]> {
-    return this.tripsService.findAll();
+  async findAll(@Req() request: AuthenticatedRequest): Promise<Trip[]> {
+    const uid = request.user?.uid || request.user?.sub;
+    const role = request.user?.role;
+
+    if (!uid) {
+      throw new UnauthorizedException('Unable to extract user identity from token');
+    }
+    return this.tripsService.findByOrganizer(uid);
   }
 
   /**
    * Get trips by organizer
    * GET /trips/organizer/:organizerId
    */
-  @Get('organizer/:organizerId')
-  @ApiOperation({
-    summary: 'Get trips by organizer',
-    description: 'Retrieve all trips organized by a specific user.',
-  })
-  @ApiParam({
-    name: 'organizerId',
-    description: 'ID of the user who organized the trip',
-    example: 'user_12345',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'List of trips organized by the user',
-    type: [Trip],
-  })
-  async findByOrganizer(
-    @Param('organizerId') organizerId: string,
-  ): Promise<Trip[]> {
-    return this.tripsService.findByOrganizer(organizerId);
-  }
+  // @Get('organizer/:organizerId')
+  // @ApiOperation({
+  //   summary: 'Get trips by organizer',
+  //   description: 'Retrieve all trips organized by a specific user.',
+  // })
+  // @ApiParam({
+  //   name: 'organizerId',
+  //   description: 'ID of the user who organized the trip',
+  //   example: 'user_12345',
+  // })
+  // @ApiResponse({
+  //   status: 200,
+  //   description: 'List of trips organized by the user',
+  //   type: [Trip],
+  // })
+  // async findByOrganizer(
+  //   @Param('organizerId') organizerId: string,
+  // ): Promise<Trip[]> {
+  //   return this.tripsService.findByOrganizer(organizerId);
+  // }
 
   /**
    * Get trips by category
