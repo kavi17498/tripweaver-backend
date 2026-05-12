@@ -32,11 +32,19 @@ export class TripsService {
     const photos = createTripDto.photos ?? [];
     const coverImage = createTripDto.coverImage ?? photos[0];
 
+    // Default status to PENDING if not provided, but allow users to set DRAFT or PENDING on creation
+    const initialStatus = createTripDto.status ?? TripStatus.PENDING;
+    if (initialStatus !== TripStatus.DRAFT && initialStatus !== TripStatus.PENDING) {
+      throw new BadRequestException(
+        'On creation, trips can only be set to DRAFT or PENDING status. Other statuses require admin approval.',
+      );
+    }
+
     const newTrip: Trip = {
       ...createTripDto,
       photos,
       coverImage,
-      status: TripStatus.PENDING,
+      status: initialStatus,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
