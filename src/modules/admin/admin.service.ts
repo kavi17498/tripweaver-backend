@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { FirebaseService } from '../../firebase/firebase.service';
 import { UsersService } from '../users/users.service';
 import { TripsService } from '../trips/trips.service';
+import { ChatGroupsService } from '../chatgroups/chatgroups.service';
 import { TripStatus } from '../trips/entities/trip-status.enum';
 import { Trip } from '../trips/entities/trip.entity';
 import { TripStatusChangeLogs } from '../trips/entities/trip-status-change-logs.entity';
@@ -14,6 +15,7 @@ export class AdminService {
   constructor(
     private readonly tripsService: TripsService,
     private readonly usersService: UsersService,
+    private readonly chatGroupsService: ChatGroupsService,
     private readonly firebaseService: FirebaseService,
   ) {}
 
@@ -68,6 +70,18 @@ export class AdminService {
     batch.set(logRef, logEntry);
 
     await batch.commit();
+
+    // Automatically create chat group if trip is being approved
+    if (dto.status === TripStatus.APPROVED) {
+      await this.chatGroupsService.create({
+        name: trip.tripName,
+        tripId,
+        adminId: trip.organizer,
+        adminName: organizerName,
+        description: `Discussion group for ${trip.tripName}`,
+        members: [trip.organizer],
+      });
+    }
 
     return this.tripsService.findOne(tripId);
   }

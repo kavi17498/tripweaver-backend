@@ -10,6 +10,7 @@ import { AdminModule } from './modules/admin/admin.module';
 import { TripPlannerModule } from './modules/tripPlaner/tripplanner.module';
 import { FirebaseAuthGuard } from './auth/firebase-auth.guard';
 import { ItineraryModule } from './modules/itinerary/itinerary.module';
+import { ChatGroupsModule } from './modules/chatgroups/chatgroups.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { ItineraryModule } from './modules/itinerary/itinerary.module';
     FirebaseModule,
     UsersModule,
     TripsModule,
+    ChatGroupsModule,
     AdminModule,
     TripPlannerModule,
   ],
