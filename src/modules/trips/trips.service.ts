@@ -50,9 +50,12 @@ export class TripsService {
   /**
    * Get all trips
    */
-  async findAll(): Promise<Trip[]> {
+  async findAll(status?: TripStatus): Promise<Trip[]> {
     const db = this.firebaseService.getFirestore();
-    const snapshot = await db.collection(this.collectionName).get();
+    const collection = db.collection(this.collectionName);
+    const snapshot = status
+      ? await collection.where('status', '==', status).get()
+      : await collection.get();
 
     const trips: Trip[] = [];
     snapshot.forEach((doc) => {

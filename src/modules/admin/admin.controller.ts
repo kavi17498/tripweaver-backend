@@ -1,7 +1,8 @@
-import { ForbiddenException, HttpCode, HttpStatus, Req, UnauthorizedException, Controller, Get } from '@nestjs/common';
-import { ApiForbiddenResponse, ApiOkResponse, ApiOperation, ApiSecurity, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
+import { BadRequestException, Controller, ForbiddenException, Get, HttpCode, HttpStatus, Query, Req, UnauthorizedException } from '@nestjs/common';
+import { ApiForbiddenResponse, ApiOkResponse, ApiOperation, ApiQuery, ApiSecurity, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
 import { Request } from 'express';
 import { Trip } from '../trips/entities/trip.entity';
+import { TripStatus } from '../trips/entities/trip-status.enum';
 import { AdminService } from './admin.service';
 
 type AuthenticatedRequest = Request & {
@@ -26,8 +27,17 @@ export class AdminController {
     summary: 'Get all trips for admins',
     description: 'Returns every trip in the database for admin and superadmin users only.',
   })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    enum: TripStatus,
+    description: 'Optional trip status filter. If omitted, returns all trips.',
+  })
   @ApiOkResponse({ type: [Trip] })
-  async getAllTrips(@Req() request: AuthenticatedRequest): Promise<Trip[]> {
+  async getAllTrips(
+    @Req() request: AuthenticatedRequest,
+    @Query('status') status?: TripStatus,
+  ): Promise<Trip[]> {
     const uid = request.user?.uid || request.user?.sub;
     const role = request.user?.role;
 
@@ -39,6 +49,10 @@ export class AdminController {
       throw new ForbiddenException('Admin or superadmin role required');
     }
 
-    return this.adminService.getAllTrips();
+    if (status && !Object.values(TripStatus).includes(status)) {
+      throw new BadRequestException('Invalid status value');
+    }
+
+    return this.adminService.getAllTrips(status);
   }
 }
