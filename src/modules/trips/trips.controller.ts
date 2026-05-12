@@ -215,7 +215,7 @@ export class TripsController {
   @Put(':id')
   @ApiOperation({
     summary: 'Update a trip',
-    description: 'Modify trip details. All fields are optional - only provide fields you want to update. You can update the photos gallery and cover image separately.',
+    description: 'Modify trip details. All fields are optional - only provide fields you want to update. You can update the photos gallery and cover image separately. Regular users can only change trip status from DRAFT to PENDING; admins can change to any status.',
   })
   @ApiParam({
     name: 'id',
@@ -232,8 +232,10 @@ export class TripsController {
   async update(
     @Param('id') id: string,
     @Body() updateTripDto: UpdateTripDto,
+    @Req() request: AuthenticatedRequest,
   ): Promise<Trip> {
-    return this.tripsService.update(id, updateTripDto);
+    const userRole = request.user?.role;
+    return this.tripsService.update(id, updateTripDto, userRole);
   }
 
   /**

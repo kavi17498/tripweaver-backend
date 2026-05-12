@@ -117,14 +117,33 @@ export class TripsService {
 
   /**
    * Update a trip
+   * @param id Trip ID
+   * @param updateTripDto Update data
+   * @param userRole User role for authorization (optional)
    */
-  async update(id: string, updateTripDto: UpdateTripDto): Promise<Trip> {
+  async update(id: string, updateTripDto: UpdateTripDto, userRole?: string): Promise<Trip> {
     const db = this.firebaseService.getFirestore();
 
     // Check if trip exists
     const doc = await db.collection(this.collectionName).doc(id).get();
     if (!doc.exists) {
       throw new NotFoundException(`Trip with ID ${id} not found`);
+    }
+
+    const currentTrip = doc.data() as Trip;
+
+    // Validate status change permissions
+    if (updateTripDto.status && updateTripDto.status !== currentTrip.status) {
+      const isAdmin = userRole === 'admin' || userRole === 'superadmin';
+
+      if (!isAdmin) {
+        // Regular users can only change from DRAFT to PENDING
+        if (currentTrip.status !== TripStatus.DRAFT || updateTripDto.status !== TripStatus.PENDING) {
+          throw new BadRequestException(
+            'Users can only change trip status from DRAFT to PENDING. Other status changes require admin privileges.',
+          );
+        }
+      }
     }
 
     // Validate date range if dates are being updated
