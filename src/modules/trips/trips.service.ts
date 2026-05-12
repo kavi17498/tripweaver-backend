@@ -36,7 +36,7 @@ export class TripsService {
       ...createTripDto,
       photos,
       coverImage,
-      status: TripStatus.DRAFT,
+      status: TripStatus.PENDING,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
