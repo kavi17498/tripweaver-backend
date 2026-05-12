@@ -1,9 +1,10 @@
-import { BadRequestException, Controller, ForbiddenException, Get, HttpCode, HttpStatus, Param, Query, Req, UnauthorizedException } from '@nestjs/common';
-import { ApiForbiddenResponse, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiParam, ApiQuery, ApiSecurity, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
+import { BadRequestException, Body, Controller, ForbiddenException, Get, HttpCode, HttpStatus, Param, Patch, Query, Req, UnauthorizedException } from '@nestjs/common';
+import { ApiBadRequestResponse, ApiBody, ApiForbiddenResponse, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiParam, ApiQuery, ApiSecurity, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
 import { Request } from 'express';
 import { Trip } from '../trips/entities/trip.entity';
 import { TripStatus } from '../trips/entities/trip-status.enum';
 import { AdminService } from './admin.service';
+import { UpdateTripStatusDto } from './dto/update-trip-status.dto';
 
 type AuthenticatedRequest = Request & {
   user?: {
@@ -86,5 +87,40 @@ export class AdminController {
     }
 
     return this.adminService.getTripById(id);
+  }
+
+  @Patch('trips/:id')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Update trip status for admins',
+    description: 'Updates the trip status, stores the reason on the trip, and writes a status change log entry. Admin and superadmin users only.',
+  })
+  @ApiParam({
+    name: 'id',
+    required: true,
+    description: 'Trip ID',
+    example: 'trip_12345',
+  })
+  @ApiBody({ type: UpdateTripStatusDto })
+  @ApiOkResponse({ type: Trip })
+  @ApiBadRequestResponse({ description: 'Invalid status or reason' })
+  @ApiNotFoundResponse({ description: 'Trip not found' })
+  async updateTripStatus(
+    @Req() request: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() updateTripStatusDto: UpdateTripStatusDto,
+  ): Promise<Trip> {
+    const uid = request.user?.uid || request.user?.sub;
+    const role = request.user?.role;
+
+    if (!uid) {
+      throw new UnauthorizedException('Unable to extract user identity from token');
+    }
+
+    if (role !== 'admin' && role !== 'superadmin') {
+      throw new ForbiddenException('Admin or superadmin role required');
+    }
+
+    return this.adminService.updateTripStatus(id, updateTripStatusDto, uid);
   }
 }
