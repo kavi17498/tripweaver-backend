@@ -9,4 +9,8 @@ export class AdminService {
   async getAllTrips(status?: TripStatus) {
     return this.tripsService.findAll(status);
   }
+
+  async getTripById(id: string) {
+    return this.tripsService.findOne(id);
+  }
 }
