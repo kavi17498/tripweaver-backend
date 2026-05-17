@@ -15,12 +15,37 @@ import { Participant } from './entities/participant.entity';
 import { TripCategory } from './entities/trip-category.enum';
 import { ApprovedPublicTripsQueryDto } from './dto/approved-public-trips-query.dto';
 import { TripCardDto } from './dto/trip-card.dto';
+import { UsersService } from '../users/users.service';
 
 @Injectable()
 export class TripsService {
   private readonly collectionName = 'trips';
 
-  constructor(private firebaseService: FirebaseService) {}
+  // small cache for organizerName lookups to avoid repeated DB calls
+  private organizerNameCache = new Map<string, string>();
+
+  constructor(
+    private firebaseService: FirebaseService,
+    private usersService: UsersService,
+  ) {}
+
+  private async resolveOrganizerName(organizerId?: string): Promise<string> {
+    if (!organizerId) return '';
+    if (this.organizerNameCache.has(organizerId)) {
+      return this.organizerNameCache.get(organizerId)!;
+    }
+
+    try {
+      const user = await this.usersService.findOne(organizerId);
+      const name = `${user.firstName || ''} ${user.lastName || ''}`.trim() || organizerId;
+      this.organizerNameCache.set(organizerId, name);
+      return name;
+    } catch (_) {
+      // If user not found or error, fall back to id
+      this.organizerNameCache.set(organizerId, organizerId);
+      return organizerId;
+    }
+  }
 
   /**
    * Create a new trip
@@ -386,25 +411,31 @@ export class TripsService {
       return true;
     });
 
-    return filtered.map((trip) => {
-      const mainDestNames = (trip.mainDestinations || []).map((d: any) => d.name || d);
-      const bookedCount = (trip.participants || []).length;
-      return {
-        id: trip.id as string,
-        tripName: trip.tripName,
-        coverImage: trip.coverImage ?? (trip.photos && trip.photos[0]) ?? '',
-        tripCategory: trip.tripCategory,
-        price: trip.price,
-        startDate: trip.startDate,
-        endDate: trip.endDate,
-        startLocation: trip.startLocation,
-        mainDestinations: mainDestNames,
-        maxParticipants: trip.maxParticipants ?? 0,
-        bookedCount,
-        organizerName: (trip as any).organizerName ?? (trip.organizer ?? ''),
-        rating: (trip as any).rating,
-        status: trip.status,
-      } as TripCardDto;
-    });
+    const results = await Promise.all(
+      filtered.map(async (trip) => {
+        const mainDestNames = (trip.mainDestinations || []).map((d: any) => d.name || d);
+        const bookedCount = (trip.participants || []).length;
+        const organizerName = await this.resolveOrganizerName(trip.organizer as string | undefined);
+
+        return {
+          id: trip.id as string,
+          tripName: trip.tripName,
+          coverImage: trip.coverImage ?? (trip.photos && trip.photos[0]) ?? '',
+          tripCategory: trip.tripCategory,
+          price: trip.price,
+          startDate: trip.startDate,
+          endDate: trip.endDate,
+          startLocation: trip.startLocation,
+          mainDestinations: mainDestNames,
+          maxParticipants: trip.maxParticipants ?? 0,
+          bookedCount,
+          organizerName: organizerName,
+          rating: (trip as any).rating,
+          status: trip.status,
+        } as TripCardDto;
+      }),
+    );
+
+    return results;
   }
 }
