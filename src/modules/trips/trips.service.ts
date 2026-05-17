@@ -43,8 +43,9 @@ export class TripsService {
     const startDate = new Date(createTripDto.startDate);
     const endDate = new Date(createTripDto.endDate);
 
-    if (startDate >= endDate) {
-      throw new BadRequestException('End date must be after start date');
+    if (startDate > endDate) {
+      // Allow startDate === endDate for one-day trips
+      throw new BadRequestException('End date must be the same or after the start date');
     }
 
     const photos = createTripDto.photos ?? [];
@@ -177,8 +178,9 @@ export class TripsService {
       const startDate = new Date(updateTripDto.startDate);
       const endDate = new Date(updateTripDto.endDate);
 
-      if (startDate >= endDate) {
-        throw new BadRequestException('End date must be after start date');
+      if (startDate > endDate) {
+        // Allow startDate === endDate for one-day trips
+        throw new BadRequestException('End date must be the same or after the start date');
       }
     }
 
