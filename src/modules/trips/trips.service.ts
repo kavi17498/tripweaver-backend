@@ -13,6 +13,8 @@ import { UpdateTripDto } from './dto/update-trip.dto';
 import { TripStatus } from './entities/trip-status.enum';
 import { Participant } from './entities/participant.entity';
 import { TripCategory } from './entities/trip-category.enum';
+import { ApprovedPublicTripsQueryDto } from './dto/approved-public-trips-query.dto';
+import { TripCardDto } from './dto/trip-card.dto';
 
 @Injectable()
 export class TripsService {
@@ -332,5 +334,75 @@ export class TripsService {
     });
 
     return trips;
+  }
+
+  /**
+   * Return approved non-private trips as compact TripCardDto objects, with optional filters.
+   */
+  async findApprovedPublicTrips(
+    filters: ApprovedPublicTripsQueryDto,
+  ): Promise<TripCardDto[]> {
+    const approvedTrips = await this.findAll(TripStatus.APPROVED);
+
+    const filtered = approvedTrips.filter((trip) => {
+      if (trip.tripCategory === TripCategory.PRIVATE_TRIP) {
+        return false;
+      }
+
+      if (filters.tripCategory && trip.tripCategory !== filters.tripCategory) {
+        return false;
+      }
+
+      if (filters.tripName && trip.tripName !== filters.tripName) {
+        return false;
+      }
+
+      if (filters.organizer && trip.organizer !== filters.organizer) {
+        return false;
+      }
+
+      if (filters.startLocation && trip.startLocation !== filters.startLocation) {
+        return false;
+      }
+
+      if (filters.startDate && trip.startDate !== filters.startDate) {
+        return false;
+      }
+
+      if (filters.endDate && trip.endDate !== filters.endDate) {
+        return false;
+      }
+
+      if (filters.minPrice !== undefined && trip.price < filters.minPrice) {
+        return false;
+      }
+
+      if (filters.maxPrice !== undefined && trip.price > filters.maxPrice) {
+        return false;
+      }
+
+      return true;
+    });
+
+    return filtered.map((trip) => {
+      const mainDestNames = (trip.mainDestinations || []).map((d: any) => d.name || d);
+      const bookedCount = (trip.participants || []).length;
+      return {
+        id: trip.id as string,
+        tripName: trip.tripName,
+        coverImage: trip.coverImage ?? (trip.photos && trip.photos[0]) ?? '',
+        tripCategory: trip.tripCategory,
+        price: trip.price,
+        startDate: trip.startDate,
+        endDate: trip.endDate,
+        startLocation: trip.startLocation,
+        mainDestinations: mainDestNames,
+        maxParticipants: trip.maxParticipants ?? 0,
+        bookedCount,
+        organizerName: (trip as any).organizerName ?? (trip.organizer ?? ''),
+        rating: (trip as any).rating,
+        status: trip.status,
+      } as TripCardDto;
+    });
   }
 }

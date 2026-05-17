@@ -32,6 +32,8 @@ import { CreateTripDto } from './dto/create-trip.dto';
 import { UpdateParticipantDto } from './dto/update-participant.dto';
 import { UpdateTripDto } from './dto/update-trip.dto';
 import { Trip } from './entities/trip.entity';
+import { ApprovedPublicTripsQueryDto } from './dto/approved-public-trips-query.dto';
+import { TripCardDto } from './dto/trip-card.dto';
 
 type AuthenticatedRequest = Request & {
   user?: {
@@ -189,6 +191,25 @@ export class TripsController {
       new Date(startDate),
       new Date(endDate),
     );
+  }
+
+  /**
+   * Get approved public trips (non-private) with optional filters
+   * GET /trips/approvedpublictrips
+   */
+  @Get('approvedpublictrips')
+  @ApiOperation({ summary: 'Get approved public trips', description: 'Returns approved non-private trips, filterable via query parameters.' })
+  @ApiQuery({ name: 'tripCategory', required: false })
+  @ApiQuery({ name: 'tripName', required: false })
+  @ApiQuery({ name: 'organizer', required: false })
+  @ApiQuery({ name: 'startLocation', required: false })
+  @ApiQuery({ name: 'startDate', required: false })
+  @ApiQuery({ name: 'endDate', required: false })
+  @ApiQuery({ name: 'minPrice', required: false })
+  @ApiQuery({ name: 'maxPrice', required: false })
+  @ApiResponse({ status: 200, description: 'Approved public trips returned successfully', type: [TripCardDto] })
+  async findApprovedPublicTrips(@Query() filters: ApprovedPublicTripsQueryDto): Promise<TripCardDto[]> {
+    return this.tripsService.findApprovedPublicTrips(filters);
   }
 
   /**
