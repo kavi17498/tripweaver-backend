@@ -5,6 +5,7 @@ import {
   Body,
   Param,
   Put,
+  Patch,
   Delete,
   HttpCode,
   HttpStatus,
@@ -26,7 +27,9 @@ import {
 } from '@nestjs/swagger';
 import { Request } from 'express';
 import { TripsService } from './trips.service';
+import { AddParticipantsDto } from './dto/add-participants.dto';
 import { CreateTripDto } from './dto/create-trip.dto';
+import { UpdateParticipantDto } from './dto/update-participant.dto';
 import { UpdateTripDto } from './dto/update-trip.dto';
 import { Trip } from './entities/trip.entity';
 
@@ -245,9 +248,9 @@ export class TripsController {
   @Post(':id/participants')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
-    summary: 'Add a participant to a trip',
+    summary: 'Add multiple participants to a trip',
     description:
-      'Register a new participant for a trip. Participant must provide name, address, phone, and email.',
+      'Register one or more participants for a trip in a single request. Each participant can have its own parentUserId, and self-purchases should leave parentUserId null or omitted.',
   })
   @ApiParam({
     name: 'id',
@@ -255,27 +258,74 @@ export class TripsController {
     example: 'trip_12345',
   })
   @ApiBody({
-    description: 'Participant registration information',
+    description: 'Bulk participant registration information',
     schema: {
       example: {
-        name: 'John Doe',
-        address: '123 Main St, New York',
-        phone: '+1234567890',
-        email: 'john@example.com',
+        participants: [
+          {
+            parentUserId: 'user_12345',
+            name: 'John Doe',
+            gender: 'male',
+            age: 28,
+            address: '123 Main St, New York',
+            phone: '+1234567890',
+            email: 'john@example.com',
+          },
+          {
+            name: 'Jane Doe',
+            gender: 'female',
+            age: 26,
+          },
+        ],
       },
     },
   })
   @ApiResponse({
     status: 201,
-    description: 'Participant added successfully',
+    description: 'Participants added successfully',
     type: Trip,
   })
   @ApiNotFoundResponse({ description: 'Trip not found' })
   async addParticipant(
     @Param('id') id: string,
-    @Body() participant: any,
+    @Body() participant: AddParticipantsDto,
   ): Promise<Trip> {
-    return this.tripsService.addParticipant(id, participant);
+    return this.tripsService.addParticipants(id, participant);
+  }
+
+  /**
+   * Update a participant on a trip
+   * PATCH /trips/:id/participants/:participantId
+   */
+  @Patch(':id/participants/:participantId')
+  @ApiOperation({
+    summary: 'Update a participant on a trip',
+    description:
+      'Partially update a participant record. Use this when correcting traveler details or linking a parent user after creation.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Unique trip identifier',
+    example: 'trip_12345',
+  })
+  @ApiParam({
+    name: 'participantId',
+    description: 'Unique participant identifier',
+    example: 'participant_12345',
+  })
+  @ApiBody({ type: UpdateParticipantDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Participant updated successfully',
+    type: Trip,
+  })
+  @ApiNotFoundResponse({ description: 'Trip or participant not found' })
+  async updateParticipant(
+    @Param('id') id: string,
+    @Param('participantId') participantId: string,
+    @Body() participant: UpdateParticipantDto,
+  ): Promise<Trip> {
+    return this.tripsService.updateParticipant(id, participantId, participant);
   }
 
   /**

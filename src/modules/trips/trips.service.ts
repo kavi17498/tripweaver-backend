@@ -3,11 +3,15 @@ import {
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { FirebaseService } from '../../firebase/firebase.service';
 import { Trip } from './entities/trip.entity';
+import { AddParticipantsDto } from './dto/add-participants.dto';
 import { CreateTripDto } from './dto/create-trip.dto';
+import { UpdateParticipantDto } from './dto/update-participant.dto';
 import { UpdateTripDto } from './dto/update-trip.dto';
 import { TripStatus } from './entities/trip-status.enum';
+import { Participant } from './entities/participant.entity';
 
 @Injectable()
 export class TripsService {
@@ -198,19 +202,98 @@ export class TripsService {
   /**
    * Add a participant to a trip
    */
-  async addParticipant(
+  async addParticipants(
     tripId: string,
-    participant: any,
+    request: AddParticipantsDto,
   ): Promise<Trip> {
     const db = this.firebaseService.getFirestore();
 
     const trip = await this.findOne(tripId);
 
+    const newParticipants: Participant[] = request.participants.map((participant) => ({
+      participantId: participant.participantId ?? randomUUID(),
+      parentUserId: participant.parentUserId ?? null,
+      name: participant.name,
+      gender: participant.gender,
+      age: participant.age,
+      ...(participant.address !== undefined ? { address: participant.address } : {}),
+      ...(participant.phone !== undefined ? { phone: participant.phone } : {}),
+      ...(participant.email !== undefined ? { email: participant.email } : {}),
+    }));
+
     if (!trip.participants) {
       trip.participants = [];
     }
 
-    trip.participants.push(participant);
+    const nextParticipantCount = trip.participants.length + newParticipants.length;
+    if (trip.maxParticipants && nextParticipantCount > trip.maxParticipants) {
+      throw new BadRequestException(
+        `This trip can only accept ${trip.maxParticipants} participants. The request would exceed that limit.`,
+      );
+    }
+
+    trip.participants.push(...newParticipants);
+
+    await db.collection(this.collectionName).doc(tripId).update({
+      participants: trip.participants,
+      updatedAt: new Date(),
+    });
+
+    return this.findOne(tripId);
+  }
+
+  async addParticipant(
+    tripId: string,
+    participant: Participant,
+  ): Promise<Trip> {
+    return this.addParticipants(tripId, {
+      participants: [participant],
+    });
+  }
+
+  /**
+   * Update a specific participant on a trip
+   */
+  async updateParticipant(
+    tripId: string,
+    participantId: string,
+    updateParticipantDto: UpdateParticipantDto,
+  ): Promise<Trip> {
+    const db = this.firebaseService.getFirestore();
+    const trip = await this.findOne(tripId);
+
+    if (!trip.participants || trip.participants.length === 0) {
+      throw new NotFoundException(`Participant with ID ${participantId} not found on trip ${tripId}`);
+    }
+
+    const participantIndex = trip.participants.findIndex(
+      (participant) => participant.participantId === participantId,
+    );
+
+    if (participantIndex === -1) {
+      throw new NotFoundException(`Participant with ID ${participantId} not found on trip ${tripId}`);
+    }
+
+    const currentParticipant = trip.participants[participantIndex];
+    const updatedParticipant: Participant = {
+      ...currentParticipant,
+      ...updateParticipantDto,
+      participantId: currentParticipant.participantId,
+      ...(updateParticipantDto.parentUserId !== undefined
+        ? { parentUserId: updateParticipantDto.parentUserId }
+        : {}),
+      ...(updateParticipantDto.address !== undefined
+        ? { address: updateParticipantDto.address }
+        : {}),
+      ...(updateParticipantDto.phone !== undefined
+        ? { phone: updateParticipantDto.phone }
+        : {}),
+      ...(updateParticipantDto.email !== undefined
+        ? { email: updateParticipantDto.email }
+        : {}),
+    };
+
+    trip.participants[participantIndex] = updatedParticipant;
 
     await db.collection(this.collectionName).doc(tripId).update({
       participants: trip.participants,
