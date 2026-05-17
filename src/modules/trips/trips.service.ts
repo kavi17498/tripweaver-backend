@@ -12,6 +12,7 @@ import { UpdateParticipantDto } from './dto/update-participant.dto';
 import { UpdateTripDto } from './dto/update-trip.dto';
 import { TripStatus } from './entities/trip-status.enum';
 import { Participant } from './entities/participant.entity';
+import { TripCategory } from './entities/trip-category.enum';
 
 @Injectable()
 export class TripsService {
@@ -22,8 +23,19 @@ export class TripsService {
   /**
    * Create a new trip
    */
-  async create(createTripDto: CreateTripDto): Promise<Trip> {
+  async create(createTripDto: CreateTripDto, userRole?: string): Promise<Trip> {
     const db = this.firebaseService.getFirestore();
+    const isPrivilegedCreator =
+      userRole === 'admin' || userRole === 'superadmin' || userRole === 'guide';
+
+    if (
+      !isPrivilegedCreator &&
+      createTripDto.tripCategory !== TripCategory.PRIVATE_TRIP
+    ) {
+      throw new BadRequestException(
+        'Regular users can only create private trips. Admin, superadmin, and guide users can create all trip types.',
+      );
+    }
 
     // Validate date range
     const startDate = new Date(createTripDto.startDate);

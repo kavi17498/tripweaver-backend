@@ -66,8 +66,12 @@ export class TripsController {
     description: 'Trip created successfully',
     type: Trip,
   })
-  async create(@Body() createTripDto: CreateTripDto): Promise<Trip> {
-    return this.tripsService.create(createTripDto);
+  async create(
+    @Body() createTripDto: CreateTripDto,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<Trip> {
+    const userRole = request.user?.role;
+    return this.tripsService.create(createTripDto, userRole);
   }
 
   /**
