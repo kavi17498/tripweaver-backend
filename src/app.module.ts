@@ -11,6 +11,7 @@ import { TripPlannerModule } from './modules/tripPlaner/tripplanner.module';
 import { FirebaseAuthGuard } from './auth/firebase-auth.guard';
 import { ItineraryModule } from './modules/itinerary/itinerary.module';
 import { ChatGroupsModule } from './modules/chatgroups/chatgroups.module';
+import { PaymentsModule } from './modules/payments/payments.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { ChatGroupsModule } from './modules/chatgroups/chatgroups.module';
     ChatGroupsModule,
     AdminModule,
     TripPlannerModule,
+    PaymentsModule,
   ],
   controllers: [AppController],
   providers: [
