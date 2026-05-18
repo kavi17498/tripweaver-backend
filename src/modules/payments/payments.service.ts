@@ -1,15 +1,36 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import {
+	BadRequestException,
+	Injectable,
+	InternalServerErrorException,
+	Logger,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 
 @Injectable()
 export class PaymentsService {
+	private readonly logger = new Logger(PaymentsService.name);
+
 	constructor(private readonly configService: ConfigService) {}
 
+	private toBoolean(value: string | undefined, defaultValue = true): boolean {
+		if (value === undefined) return defaultValue;
+		return value.toLowerCase() === 'true';
+	}
+
 	createPayment(body: CreatePaymentDto) {
-		const merchantId = this.configService.get<string>('PAYHERE_MERCHANT_ID');
-		const merchantSecret = this.configService.get<string>('PAYHERE_MERCHANT_SECRET');
+		const merchantId = this.configService.get<string>('PAYHERE_MERCHANT_ID')?.trim();
+		const merchantSecret = this.configService
+			.get<string>('PAYHERE_MERCHANT_SECRET')
+			?.trim();
+		const notifyUrl = this.configService.get<string>('PAYHERE_NOTIFY_URL')?.trim();
+		const returnUrl = this.configService.get<string>('PAYHERE_RETURN_URL')?.trim();
+		const cancelUrl = this.configService.get<string>('PAYHERE_CANCEL_URL')?.trim();
+		const sandbox = this.toBoolean(
+			this.configService.get<string>('PAYHERE_SANDBOX')?.trim(),
+			true,
+		);
 
 		if (!merchantId || !merchantSecret) {
 			throw new InternalServerErrorException(
@@ -17,8 +38,19 @@ export class PaymentsService {
 			);
 		}
 
+		if (!notifyUrl || !returnUrl || !cancelUrl) {
+			throw new InternalServerErrorException(
+				'PAYHERE_NOTIFY_URL, PAYHERE_RETURN_URL and PAYHERE_CANCEL_URL must be configured',
+			);
+		}
+
+		const amountNumber = Number(body.amount);
+		if (!Number.isFinite(amountNumber) || amountNumber <= 0) {
+			throw new BadRequestException('Invalid amount. Amount must be a positive number.');
+		}
+
 		const orderId = `ORDER_${Date.now()}`;
-		const amount = Number(body.amount).toFixed(2);
+		const amount = amountNumber.toFixed(2);
 		const currency = 'LKR';
 
 		const secretHash = crypto
@@ -33,12 +65,12 @@ export class PaymentsService {
 			.digest('hex')
 			.toUpperCase();
 
-		return {
-			sandbox: true,
+		const paymentObject = {
+			sandbox,
 			merchant_id: merchantId,
-			return_url: 'http://localhost:3000/payment-success',
-			cancel_url: 'http://localhost:3000/payment-cancel',
-			notify_url: 'https://YOUR_BACKEND/payments/notify',
+			return_url: returnUrl,
+			cancel_url: cancelUrl,
+			notify_url: notifyUrl,
 			order_id: orderId,
 			items: 'Trip Booking',
 			amount,
@@ -52,5 +84,19 @@ export class PaymentsService {
 			country: 'Sri Lanka',
 			hash,
 		};
+
+		const hasInvalidField = Object.entries(paymentObject).some(
+			([, value]) => value === undefined || value === null || value === '',
+		);
+
+		if (hasInvalidField) {
+			throw new InternalServerErrorException(
+				'Generated payment object contains invalid empty fields',
+			);
+		}
+
+		this.logger.log(`PayHere payment object: ${JSON.stringify(paymentObject)}`);
+
+		return paymentObject;
 	}
 }
