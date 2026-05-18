@@ -101,6 +101,8 @@ export class UsersController {
       firstName: 'John',
       lastName: 'Doe',
       email: 'john@example.com',
+        dateOfBirth: '1990-05-20',
+        gender: 'male',
       phone: '+1234567890',
       street: '123 Main St',
       city: 'New York',

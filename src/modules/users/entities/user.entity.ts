@@ -28,6 +28,21 @@ export class User {
   profileImage?: string;
 
   @ApiProperty({
+    description: "User's date of birth",
+    example: '1990-05-20',
+    required: false,
+    type: String,
+  })
+  dateOfBirth?: Date;
+
+  @ApiProperty({
+    description: "User's gender",
+    example: 'male',
+    required: false,
+  })
+  gender?: string;
+
+  @ApiProperty({
     description: 'User biography',
     example: 'Travel enthusiast',
     required: false,
