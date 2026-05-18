@@ -34,6 +34,7 @@ import { UpdateTripDto } from './dto/update-trip.dto';
 import { Trip } from './entities/trip.entity';
 import { ApprovedPublicTripsQueryDto } from './dto/approved-public-trips-query.dto';
 import { TripCardDto } from './dto/trip-card.dto';
+import { Public } from '../../auth/public.decorator';
 
 type AuthenticatedRequest = Request & {
   user?: {
@@ -198,6 +199,7 @@ export class TripsController {
    * GET /trips/approvedpublictrips
    */
   @Get('approvedpublictrips')
+  @Public()
   @ApiOperation({ summary: 'Get approved public trips', description: 'Returns approved non-private trips, filterable via query parameters.' })
   @ApiQuery({ name: 'tripCategory', required: false })
   @ApiQuery({ name: 'tripName', required: false })
