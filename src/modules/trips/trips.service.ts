@@ -11,6 +11,7 @@ import { CreateTripDto } from './dto/create-trip.dto';
 import { UpdateParticipantDto } from './dto/update-participant.dto';
 import { UpdateTripDto } from './dto/update-trip.dto';
 import { TripStatus } from './entities/trip-status.enum';
+import { TripPaymentMethod } from './entities/trip-core.entity';
 import { Participant } from './entities/participant.entity';
 import { TripCategory } from './entities/trip-category.enum';
 import { ApprovedPublicTripsQueryDto } from './dto/approved-public-trips-query.dto';
@@ -259,6 +260,23 @@ export class TripsService {
     const db = this.firebaseService.getFirestore();
 
     const trip = await this.findOne(tripId);
+    const availablePaymentMethods = trip.paymentMethods ?? [];
+
+    if (!availablePaymentMethods.length) {
+      throw new BadRequestException('This trip does not have any payment methods configured.');
+    }
+
+    const selectedPaymentMethod =
+      request.paymentMethod ??
+      (availablePaymentMethods.length === 1 ? availablePaymentMethods[0] : undefined);
+
+    if (!selectedPaymentMethod) {
+      throw new BadRequestException('Please select a payment method for this booking.');
+    }
+
+    if (!availablePaymentMethods.includes(selectedPaymentMethod as TripPaymentMethod)) {
+      throw new BadRequestException('The selected payment method is not available for this trip.');
+    }
 
     if (trip.status !== TripStatus.APPROVED) {
       throw new BadRequestException('This trip is not available for booking.');
