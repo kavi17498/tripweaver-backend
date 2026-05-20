@@ -56,8 +56,8 @@ export class NotificationsService {
   }
 
   async getUnreadCount(userId: string): Promise<number> {
-    const snapshot = await this.getCollection().where('userId', '==', userId).where('read', '==', false).get();
-    return snapshot.size;
+    const notifications = await this.findByUserId(userId);
+    return notifications.filter((notification) => !notification.read).length;
   }
 
   async markAsRead(id: string): Promise<NotificationEntity> {
