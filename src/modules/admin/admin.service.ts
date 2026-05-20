@@ -79,7 +79,7 @@ export class AdminService {
 
     // Automatically create chat group if trip is being approved
     if (dto.status === TripStatus.APPROVED) {
-      await this.chatGroupsService.create({
+      await this.chatGroupsService.ensureTripChatGroup({
         name: trip.tripName,
         tripId,
         adminId: trip.organizer,

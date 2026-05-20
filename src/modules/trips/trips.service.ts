@@ -17,6 +17,7 @@ import { TripCategory } from './entities/trip-category.enum';
 import { ApprovedPublicTripsQueryDto } from './dto/approved-public-trips-query.dto';
 import { TripCardDto } from './dto/trip-card.dto';
 import { UsersService } from '../users/users.service';
+import { ChatGroupsService } from '../chatgroups/chatgroups.service';
 
 @Injectable()
 export class TripsService {
@@ -37,6 +38,7 @@ export class TripsService {
   constructor(
     private firebaseService: FirebaseService,
     private usersService: UsersService,
+    private chatGroupsService: ChatGroupsService,
   ) {}
 
   private async resolveOrganizerName(organizerId?: string): Promise<string> {
@@ -105,6 +107,15 @@ export class TripsService {
 
     const docRef = await db.collection(this.collectionName).add(newTrip);
     const id = docRef.id;
+
+    await this.chatGroupsService.ensureTripChatGroup({
+      tripId: id,
+      name: newTrip.tripName,
+      adminId: newTrip.organizer,
+      adminName: await this.resolveOrganizerName(newTrip.organizer),
+      description: `Discussion group for ${newTrip.tripName}`,
+      members: [newTrip.organizer],
+    });
 
     return { ...newTrip, id };
   }
@@ -363,6 +374,23 @@ export class TripsService {
     }
 
     trip.participants.push(...newParticipants);
+
+    const bookingMemberIds = Array.from(
+      new Set(newParticipants.map((participant) => participant.parentUserId).filter((id): id is string => Boolean(id))),
+    );
+
+    if (bookingMemberIds.length > 0) {
+      const chatGroup = await this.chatGroupsService.ensureTripChatGroup({
+        tripId,
+        name: trip.tripName,
+        adminId: trip.organizer,
+        adminName: await this.resolveOrganizerName(trip.organizer as string | undefined),
+        description: `Discussion group for ${trip.tripName}`,
+        members: [trip.organizer, ...bookingMemberIds],
+      });
+
+      await this.chatGroupsService.addMembers(chatGroup.id!, bookingMemberIds);
+    }
 
     // If this booking reserves the trip (family or solo), mark reservation metadata
     const updatePayload: any = {

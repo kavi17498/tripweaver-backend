@@ -11,6 +11,7 @@ import { TripPlannerModule } from './modules/tripPlaner/tripplanner.module';
 import { FirebaseAuthGuard } from './auth/firebase-auth.guard';
 import { ItineraryModule } from './modules/itinerary/itinerary.module';
 import { ChatGroupsModule } from './modules/chatgroups/chatgroups.module';
+import { ChatMessagesModule } from './modules/chatmessages/chatmessages.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 
 @Module({
@@ -20,6 +21,7 @@ import { PaymentsModule } from './modules/payments/payments.module';
     UsersModule,
     TripsModule,
     ChatGroupsModule,
+    ChatMessagesModule,
     AdminModule,
     TripPlannerModule,
     PaymentsModule,
