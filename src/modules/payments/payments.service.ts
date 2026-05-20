@@ -31,6 +31,7 @@ export class PaymentsService {
 			this.configService.get<string>('PAYHERE_SANDBOX')?.trim(),
 			true,
 		);
+		let notifyUrlHostname: string;
 
 		if (!merchantId || !merchantSecret) {
 			throw new InternalServerErrorException(
@@ -44,9 +45,36 @@ export class PaymentsService {
 			);
 		}
 
+		try {
+			notifyUrlHostname = new URL(notifyUrl).hostname.toLowerCase();
+		} catch {
+			throw new InternalServerErrorException('PAYHERE_NOTIFY_URL must be a valid absolute URL');
+		}
+
+		if (
+			notifyUrlHostname === 'localhost' ||
+			notifyUrlHostname === '127.0.0.1' ||
+			notifyUrlHostname === '0.0.0.0'
+		) {
+			throw new InternalServerErrorException(
+				'PAYHERE_NOTIFY_URL must be publicly reachable; localhost cannot receive PayHere callbacks',
+			);
+		}
+
 		const amountNumber = Number(body.amount);
 		if (!Number.isFinite(amountNumber) || amountNumber <= 0) {
 			throw new BadRequestException('Invalid amount. Amount must be a positive number.');
+		}
+
+		const firstName = body.first_name.trim();
+		const lastName = body.last_name.trim();
+		const email = body.email.trim();
+		const phone = body.phone.trim();
+
+		if (!firstName || !lastName || !email || !phone) {
+			throw new BadRequestException(
+				'Customer details must not be empty or whitespace-only.',
+			);
 		}
 
 		const orderId = `ORDER_${Date.now()}`;
@@ -75,10 +103,10 @@ export class PaymentsService {
 			items: 'Trip Booking',
 			amount,
 			currency,
-			first_name: body.first_name,
-			last_name: body.last_name,
-			email: body.email,
-			phone: body.phone,
+			first_name: firstName,
+			last_name: lastName,
+			email,
+			phone,
 			address: 'Sri Lanka',
 			city: 'Colombo',
 			country: 'Sri Lanka',
