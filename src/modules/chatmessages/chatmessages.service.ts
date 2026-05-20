@@ -15,16 +15,34 @@ export class ChatMessagesService {
 
   async findByChatGroupId(chatGroupId: string): Promise<ChatMessageEntity[]> {
     const db = this.firebaseService.getFirestore();
-    const snapshot = await db
-      .collection(this.collectionName)
-      .where('chatGroupId', '==', chatGroupId)
-      .orderBy('createdAt', 'asc')
-      .get();
+    // Avoid composite index requirement by fetching matching documents
+    // and sorting in-memory by `createdAt`. This keeps chronological
+    // order without requiring a Firestore composite index.
+    const snapshot = await db.collection(this.collectionName).where('chatGroupId', '==', chatGroupId).get();
 
     const messages: ChatMessageEntity[] = [];
     snapshot.forEach((doc) => {
-      messages.push({ id: doc.id, ...doc.data() } as ChatMessageEntity);
+      const data = doc.data() as any;
+
+      // Normalize Firestore Timestamp to JS Date when possible
+      const createdAt = data?.createdAt && typeof data.createdAt.toDate === 'function'
+        ? data.createdAt.toDate()
+        : data?.createdAt ? new Date(data.createdAt) : new Date(0);
+
+      const updatedAt = data?.updatedAt && typeof data.updatedAt.toDate === 'function'
+        ? data.updatedAt.toDate()
+        : data?.updatedAt ? new Date(data.updatedAt) : createdAt;
+
+      messages.push({
+        id: doc.id,
+        ...data,
+        createdAt,
+        updatedAt,
+      } as ChatMessageEntity);
     });
+
+    // Sort chronologically
+    messages.sort((a, b) => (a.createdAt?.getTime() ?? 0) - (b.createdAt?.getTime() ?? 0));
 
     return messages;
   }
