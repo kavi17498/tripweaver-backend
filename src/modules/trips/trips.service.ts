@@ -286,6 +286,15 @@ export class TripsService {
       throw new BadRequestException('This trip has expired.');
     }
 
+    // Enforce trip-category specific booking rules (server-authoritative)
+    const category = trip.tripCategory;
+
+    // If trip is already explicitly reserved (for family/solo), prevent further bookings
+    const isReservedFor = (trip as any).reservedFor as string | undefined;
+    if (isReservedFor === 'family' || isReservedFor === 'solo') {
+      throw new BadRequestException('This trip has been reserved and is no longer bookable.');
+    }
+
     const newParticipants: Participant[] = request.participants.map((participant) => ({
       participantId: participant.participantId ?? randomUUID(),
       parentUserId: participant.parentUserId ?? null,
@@ -301,6 +310,24 @@ export class TripsService {
       trip.participants = [];
     }
 
+    // Prevent duplicate bookings by the same user for the same trip
+    const existingParticipants = trip.participants || [];
+    for (const np of newParticipants) {
+      if (np.parentUserId) {
+        const duplicate = existingParticipants.find((ep) => ep.parentUserId && ep.parentUserId === np.parentUserId);
+        if (duplicate) {
+          throw new BadRequestException('You have already booked this trip.');
+        }
+      }
+
+      if (np.email) {
+        const duplicateByEmail = existingParticipants.find((ep) => ep.email && ep.email === np.email);
+        if (duplicateByEmail) {
+          throw new BadRequestException('A participant with this email has already been booked for this trip.');
+        }
+      }
+    }
+
     const nextParticipantCount = trip.participants.length + newParticipants.length;
     if (trip.maxParticipants && nextParticipantCount > trip.maxParticipants) {
       throw new BadRequestException(
@@ -308,12 +335,57 @@ export class TripsService {
       );
     }
 
+    // Category-specific restrictions: Family and Solo trips can only be booked once (one booking may contain multiple family members)
+    if (
+      category === TripCategory.FAMILY_TRIP_WITH_GUIDE ||
+      category === TripCategory.SOLO_TRIP_WITH_GUIDE
+    ) {
+      // If there are already participants, the trip is finished for booking
+      if ((trip.participants || []).length > 0) {
+        // If any of the new participants match existing participants by parentUserId or email,
+        // return a user-friendly message indicating they already booked this trip.
+        const alreadyBooked = newParticipants.some((np) => {
+          if (np.parentUserId) {
+            return existingParticipants.some((ep) => ep.parentUserId && ep.parentUserId === np.parentUserId);
+          }
+          if (np.email) {
+            return existingParticipants.some((ep) => ep.email && ep.email === np.email);
+          }
+          return false;
+        });
+
+        if (alreadyBooked) {
+          throw new BadRequestException('You have already booked this trip.');
+        }
+
+        throw new BadRequestException('This trip is no longer available for booking.');
+      }
+    }
+
     trip.participants.push(...newParticipants);
 
-    await db.collection(this.collectionName).doc(tripId).update({
+    // If this booking reserves the trip (family or solo), mark reservation metadata
+    const updatePayload: any = {
       participants: trip.participants,
       updatedAt: new Date(),
-    });
+    };
+
+    if (category === TripCategory.FAMILY_TRIP_WITH_GUIDE) {
+      // Reserve for family: set reservedFor and reservedBy (use parentUserId of first participant if available)
+      const reservedBy = newParticipants[0]?.parentUserId ?? null;
+      updatePayload.reservedFor = 'family';
+      updatePayload.reservedByUserId = reservedBy;
+      updatePayload.reservedAt = new Date();
+    }
+
+    if (category === TripCategory.SOLO_TRIP_WITH_GUIDE) {
+      const reservedBy = newParticipants[0]?.parentUserId ?? null;
+      updatePayload.reservedFor = 'solo';
+      updatePayload.reservedByUserId = reservedBy;
+      updatePayload.reservedAt = new Date();
+    }
+
+    await db.collection(this.collectionName).doc(tripId).update(updatePayload);
 
     return this.findOne(tripId);
   }
@@ -408,6 +480,22 @@ export class TripsService {
 
     const filtered = approvedTrips.filter((trip) => {
       if (trip.tripCategory === TripCategory.PRIVATE_TRIP) {
+        return false;
+      }
+
+      const bookedCount = (trip.participants || []).length;
+      const reservedFor = (trip as any).reservedFor as string | undefined;
+      const isFamilyOrSolo =
+        trip.tripCategory === TripCategory.FAMILY_TRIP_WITH_GUIDE ||
+        trip.tripCategory === TripCategory.SOLO_TRIP_WITH_GUIDE;
+
+      // Family and solo trips disappear from home once they have any booking.
+      if (isFamilyOrSolo && (bookedCount > 0 || reservedFor === 'family' || reservedFor === 'solo')) {
+        return false;
+      }
+
+      // Stranger trips stay public until they are fully booked.
+      if (trip.tripCategory === TripCategory.STRANGERS_TRIP_WITH_GUIDE && trip.maxParticipants && bookedCount >= trip.maxParticipants) {
         return false;
       }
 

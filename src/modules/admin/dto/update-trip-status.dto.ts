@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEnum, IsOptional, IsString } from 'class-validator';
+import { IsEnum, IsOptional, IsString, IsNotEmpty } from 'class-validator';
 import { TripStatus } from '../../trips/entities/trip-status.enum';
 
 export class UpdateTripStatusDto {
