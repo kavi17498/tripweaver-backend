@@ -24,6 +24,15 @@ export class TripsService {
   // small cache for organizerName lookups to avoid repeated DB calls
   private organizerNameCache = new Map<string, string>();
 
+  private isTripExpired(endDate?: string): boolean {
+    if (!endDate) return true;
+
+    const tripEnd = new Date(`${endDate}T23:59:59.999`);
+    if (Number.isNaN(tripEnd.getTime())) return true;
+
+    return new Date() > tripEnd;
+  }
+
   constructor(
     private firebaseService: FirebaseService,
     private usersService: UsersService,
@@ -250,6 +259,14 @@ export class TripsService {
     const db = this.firebaseService.getFirestore();
 
     const trip = await this.findOne(tripId);
+
+    if (trip.status !== TripStatus.APPROVED) {
+      throw new BadRequestException('This trip is not available for booking.');
+    }
+
+    if (this.isTripExpired(trip.endDate)) {
+      throw new BadRequestException('This trip has expired.');
+    }
 
     const newParticipants: Participant[] = request.participants.map((participant) => ({
       participantId: participant.participantId ?? randomUUID(),
