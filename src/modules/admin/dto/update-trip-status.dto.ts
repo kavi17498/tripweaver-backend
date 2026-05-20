@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEnum, IsNotEmpty, IsString } from 'class-validator';
+import { IsEnum, IsOptional, IsString } from 'class-validator';
 import { TripStatus } from '../../trips/entities/trip-status.enum';
 
 export class UpdateTripStatusDto {
@@ -15,8 +15,9 @@ export class UpdateTripStatusDto {
   @ApiProperty({
     description: 'Reason for the status change',
     example: 'All the details are good and organizer has a good history',
+    required: false,
   })
-  @IsNotEmpty()
+  @IsOptional()
   @IsString()
-  reason!: string;
+  reason?: string;
 }

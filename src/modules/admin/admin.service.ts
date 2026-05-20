@@ -45,6 +45,7 @@ export class AdminService {
     const now = new Date();
     const logRef = db.collection(this.tripStatusChangeLogsCollection).doc();
     const tripRef = db.collection('trips').doc(tripId);
+    const reason = dto.reason?.trim() || (dto.status === TripStatus.IN_REVIEW ? 'Moved to the review queue.' : 'Status updated by admin.');
 
     const logEntry: TripStatusChangeLogs = {
       id: logRef.id,
@@ -54,19 +55,24 @@ export class AdminService {
       userId: adminUserId,
       userName: adminName,
       status: dto.status,
-      reason: dto.reason,
+      reason,
       updatedAt: now,
     };
 
-    const batch = db.batch();
-    batch.update(tripRef, {
+    const tripUpdate: Record<string, unknown> = {
       status: dto.status,
-      statusReason: dto.reason,
       statusUpdatedBy: adminUserId,
       statusUpdatedByName: adminName,
       statusUpdatedAt: now,
       updatedAt: now,
-    });
+    };
+
+    if (reason) {
+      tripUpdate.statusReason = reason;
+    }
+
+    const batch = db.batch();
+    batch.update(tripRef, tripUpdate);
     batch.set(logRef, logEntry);
 
     await batch.commit();
