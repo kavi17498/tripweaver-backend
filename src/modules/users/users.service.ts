@@ -232,6 +232,7 @@ export class UsersService {
     currentUid: string,
     userIdsInput: string[] | string | undefined,
     role: string,
+    requesterRole?: string,
   ): Promise<{
     status: 'success';
     assigned: string[];
@@ -239,14 +240,18 @@ export class UsersService {
   }> {
     const auth = this.firebaseService.getAuth();
 
-    // Verify current user is superadmin
+    const requestedRole = role?.trim().toLowerCase();
+
+    // Verify current user permission.
     try {
       const currentUser = await auth.getUser(currentUid);
-      const currentRole = currentUser.customClaims?.role;
+      const currentRole = (currentUser.customClaims?.role || requesterRole || '').toString().toLowerCase();
+      const canAssignGuide = requestedRole === 'guide' && (currentRole === 'admin' || currentRole === 'superadmin');
+      const canAssignOthers = currentRole === 'superadmin';
 
-      if (currentRole !== 'superadmin') {
+      if (!canAssignGuide && !canAssignOthers) {
         throw new ForbiddenException(
-          'Only superadmin users can assign roles to other users',
+          'Only superadmin users can assign roles. Admin can assign guide role only.',
         );
       }
     } catch (error: unknown) {
@@ -260,7 +265,7 @@ export class UsersService {
         throw error;
       }
 
-      throw new InternalServerErrorException('Failed to verify superadmin status');
+      throw new InternalServerErrorException('Failed to verify user role permissions');
     }
 
     // Validate role is a non-empty string
@@ -312,6 +317,15 @@ export class UsersService {
           },
           { merge: true },
         );
+
+        if (requestedRole === 'guide') {
+          await db.collection('usertogudieLogs').add({
+            userId,
+            assignedBy: currentUid,
+            role: 'guide',
+            createdAt: new Date(),
+          });
+        }
 
         assigned.push(userId);
       } catch (error: unknown) {

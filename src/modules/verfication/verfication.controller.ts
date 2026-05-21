@@ -63,6 +63,13 @@ export class VerficationController {
     return this.verficationService.findInReviewForAdmin(uid);
   }
 
+  @Get('admin/:id/details')
+  async getAdminReviewDetails(@Param('id') id: string, @Request() req: AuthenticatedRequest) {
+    const { role } = this.getAuthContext(req);
+    this.assertAdmin(role);
+    return this.verficationService.getAdminReviewDetails(id);
+  }
+
   @Patch('admin/bulk-in-review')
   async moveManyToInReview(@Body() body: BulkMoveInReviewDto, @Request() req: AuthenticatedRequest) {
     const { uid, role, name } = this.getAuthContext(req);

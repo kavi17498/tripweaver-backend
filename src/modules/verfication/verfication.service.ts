@@ -5,12 +5,20 @@ import { UpdateVerficationDto } from './dto/update-verfication.dto';
 import { FirebaseService } from '../../firebase/firebase.service';
 import * as admin from 'firebase-admin';
 import { Verfication } from './entities/verfication.entity';
+import { UsersService } from '../users/users.service';
+import { TripsService } from '../trips/trips.service';
+import { VerificationMeetingService } from '../verificationmeeting/verificationmeeting.service';
 
 @Injectable()
 export class VerficationService {
   private collectionName = 'verificationRequests';
 
-  constructor(private readonly firebaseService: FirebaseService) {}
+  constructor(
+    private readonly firebaseService: FirebaseService,
+    private readonly usersService: UsersService,
+    private readonly tripsService: TripsService,
+    private readonly verificationMeetingService: VerificationMeetingService,
+  ) {}
 
   private getCollection() {
     return this.firebaseService.getFirestore().collection(this.collectionName);
@@ -165,6 +173,25 @@ export class VerficationService {
     const data = doc.data() as any;
     if (userId && data.userId !== userId) throw new ForbiddenException('Not allowed to view this request');
     return { id: doc.id, ...data } as Verfication;
+  }
+
+  async getAdminReviewDetails(id: string): Promise<{
+    verification: Verfication;
+    user: any;
+    trips: any[];
+    meeting: any | null;
+  }> {
+    const verification = await this.findOne(id);
+    const user = await this.usersService.findOne(verification.userId);
+    const trips = await this.tripsService.findByOrganizer(verification.userId);
+    const meeting = await this.verificationMeetingService.getByVerificationId(id);
+
+    return {
+      verification,
+      user,
+      trips,
+      meeting,
+    };
   }
 
   async update(id: string, userId: string, updateDto: UpdateVerficationDto): Promise<Verfication> {

@@ -297,7 +297,7 @@ export class UsersController {
   @ApiOperation({
     summary: 'Assign role to one or multiple users',
     description:
-      'Superadmin users can assign roles to other users. Current user is skipped if included. Accepts single userId (string) or multiple userIds (array) with a role name.',
+      'Superadmin users can assign any role. Admin users can assign only guide role. Current user is skipped if included. Accepts single userId (string) or multiple userIds (array) with a role name.',
   })
   @ApiBody({ type: AssignRoleDto })
   @ApiResponse({
@@ -331,14 +331,12 @@ export class UsersController {
     this.assertAdminOnly(request);
 
     const { role } = this.getRequesterIdentity(request);
-    if (role !== 'superadmin') {
-      throw new ForbiddenException('Only superadmin users can assign roles to other users');
-    }
 
     return this.usersService.assignRolesToUsers(
       currentUid,
       assignRoleDto.userIds?.length ? assignRoleDto.userIds : assignRoleDto.userId,
       assignRoleDto.role,
+      role,
     );
   }
 }

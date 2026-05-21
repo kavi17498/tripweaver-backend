@@ -15,6 +15,7 @@ import { ChatMessagesModule } from './modules/chatmessages/chatmessages.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { VerficationModule } from './modules/verfication/verfication.module';
+import { VerificationMeetingModule } from './modules/verificationmeeting/verificationmeeting.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { VerficationModule } from './modules/verfication/verfication.module';
     TripPlannerModule,
     PaymentsModule,
     VerficationModule,
+    VerificationMeetingModule,
   ],
   controllers: [AppController],
   providers: [
