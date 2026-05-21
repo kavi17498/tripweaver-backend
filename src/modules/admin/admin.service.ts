@@ -3,6 +3,7 @@ import { FirebaseService } from '../../firebase/firebase.service';
 import { UsersService } from '../users/users.service';
 import { TripsService } from '../trips/trips.service';
 import { ChatGroupsService } from '../chatgroups/chatgroups.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { TripStatus } from '../trips/entities/trip-status.enum';
 import { Trip } from '../trips/entities/trip.entity';
 import { TripStatusChangeLogs } from '../trips/entities/trip-status-change-logs.entity';
@@ -16,6 +17,7 @@ export class AdminService {
     private readonly tripsService: TripsService,
     private readonly usersService: UsersService,
     private readonly chatGroupsService: ChatGroupsService,
+    private readonly notificationsService: NotificationsService,
     private readonly firebaseService: FirebaseService,
   ) {}
 
@@ -45,6 +47,7 @@ export class AdminService {
     const now = new Date();
     const logRef = db.collection(this.tripStatusChangeLogsCollection).doc();
     const tripRef = db.collection('trips').doc(tripId);
+    const reason = dto.reason?.trim() || (dto.status === TripStatus.IN_REVIEW ? 'Moved to the review queue.' : 'Status updated by admin.');
 
     const logEntry: TripStatusChangeLogs = {
       id: logRef.id,
@@ -54,32 +57,43 @@ export class AdminService {
       userId: adminUserId,
       userName: adminName,
       status: dto.status,
-      reason: dto.reason,
+      reason,
       updatedAt: now,
     };
 
-    const batch = db.batch();
-    batch.update(tripRef, {
+    const tripUpdate: Record<string, unknown> = {
       status: dto.status,
-      statusReason: dto.reason,
       statusUpdatedBy: adminUserId,
       statusUpdatedByName: adminName,
       statusUpdatedAt: now,
       updatedAt: now,
-    });
+    };
+
+    if (reason) {
+      tripUpdate.statusReason = reason;
+    }
+
+    const batch = db.batch();
+    batch.update(tripRef, tripUpdate);
     batch.set(logRef, logEntry);
 
     await batch.commit();
 
-    // Automatically create chat group if trip is being approved
-    if (dto.status === TripStatus.APPROVED) {
-      await this.chatGroupsService.create({
+    // Automatically create chat group and notify the organizer if trip is being approved.
+    if (dto.status === TripStatus.APPROVED && trip.status !== TripStatus.APPROVED) {
+      await this.chatGroupsService.ensureTripChatGroup({
         name: trip.tripName,
         tripId,
         adminId: trip.organizer,
         adminName: organizerName,
         description: `Discussion group for ${trip.tripName}`,
         members: [trip.organizer],
+      });
+
+      await this.notificationsService.createTripApprovedNotification({
+        userId: trip.organizer,
+        tripId,
+        tripName: trip.tripName,
       });
     }
 

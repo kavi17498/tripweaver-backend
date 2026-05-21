@@ -10,6 +10,7 @@ import {
   HttpStatus,
   Req,
   UnauthorizedException,
+  ForbiddenException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -32,6 +33,7 @@ type AuthenticatedRequest = Request & {
   user?: {
     uid?: string;
     sub?: string;
+    role?: string;
   };
 };
 
@@ -42,6 +44,42 @@ type AuthenticatedRequest = Request & {
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
+
+  private getRequesterIdentity(request: AuthenticatedRequest): {
+    uid: string;
+    role?: string;
+  } {
+    const uid = request.user?.uid || request.user?.sub;
+    const role = request.user?.role;
+
+    if (!uid) {
+      throw new UnauthorizedException('Unable to extract user identity from token');
+    }
+
+    return { uid, role };
+  }
+
+  private assertSelfOrAdmin(
+    request: AuthenticatedRequest,
+    targetUserId: string,
+  ): void {
+    const { uid, role } = this.getRequesterIdentity(request);
+    const isAdmin = role === 'admin' || role === 'superadmin';
+
+    if (!isAdmin && uid !== targetUserId) {
+      throw new ForbiddenException(
+        'You can only access your own user data unless you are admin or superadmin',
+      );
+    }
+  }
+
+  private assertAdminOnly(request: AuthenticatedRequest): void {
+    const { role } = this.getRequesterIdentity(request);
+
+    if (role !== 'admin' && role !== 'superadmin') {
+      throw new ForbiddenException('Admin or superadmin role required');
+    }
+  }
 
   /**
    * Create a new user
@@ -63,6 +101,8 @@ export class UsersController {
       firstName: 'John',
       lastName: 'Doe',
       email: 'john@example.com',
+        dateOfBirth: '1990-05-20',
+        gender: 'male',
       phone: '+1234567890',
       street: '123 Main St',
       city: 'New York',
@@ -93,7 +133,8 @@ export class UsersController {
     description: 'List of all users retrieved successfully',
     type: [User],
   })
-  async findAll(): Promise<User[]> {
+  async findAll(@Req() request: AuthenticatedRequest): Promise<User[]> {
+    this.assertAdminOnly(request);
     return this.usersService.findAll();
   }
 
@@ -111,7 +152,8 @@ export class UsersController {
     description: 'List of verified users',
     type: [User],
   })
-  async findVerified(): Promise<User[]> {
+  async findVerified(@Req() request: AuthenticatedRequest): Promise<User[]> {
+    this.assertAdminOnly(request);
     return this.usersService.findVerified();
   }
 
@@ -162,7 +204,11 @@ export class UsersController {
     type: User,
   })
   @ApiNotFoundResponse({ description: 'User with specified ID not found' })
-  async findOne(@Param('id') id: string): Promise<User> {
+  async findOne(
+    @Param('id') id: string,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<User> {
+    this.assertSelfOrAdmin(request, id);
     return this.usersService.findOne(id);
   }
 
@@ -187,7 +233,9 @@ export class UsersController {
   async update(
     @Param('id') id: string,
     @Body() updateUserDto: UpdateUserDto,
+    @Req() request: AuthenticatedRequest,
   ): Promise<User> {
+    this.assertSelfOrAdmin(request, id);
     return this.usersService.update(id, updateUserDto);
   }
 
@@ -204,7 +252,11 @@ export class UsersController {
   @ApiParam({ name: 'id', description: 'Unique user identifier', example: 'user_12345' })
   @ApiResponse({ status: 204, description: 'User deleted successfully' })
   @ApiNotFoundResponse({ description: 'User not found' })
-  async remove(@Param('id') id: string): Promise<void> {
+  async remove(
+    @Param('id') id: string,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<void> {
+    this.assertSelfOrAdmin(request, id);
     return this.usersService.remove(id);
   }
 
@@ -231,11 +283,7 @@ export class UsersController {
   async setCustomClaimsSuperadmin(
     @Req() request: AuthenticatedRequest,
   ): Promise<{ status: 'success' }> {
-    const uid = request.user?.uid || request.user?.sub;
-
-    if (!uid) {
-      throw new UnauthorizedException('Unable to extract user identity from token');
-    }
+    const { uid } = this.getRequesterIdentity(request);
 
     return this.usersService.setSelfAsSuperadmin(uid);
   }
@@ -278,10 +326,13 @@ export class UsersController {
     assigned: string[];
     failed: Array<{ userId: string; reason: string }>;
   }> {
-    const currentUid = request.user?.uid || request.user?.sub;
+    const { uid: currentUid } = this.getRequesterIdentity(request);
 
-    if (!currentUid) {
-      throw new UnauthorizedException('Unable to extract user identity from token');
+    this.assertAdminOnly(request);
+
+    const { role } = this.getRequesterIdentity(request);
+    if (role !== 'superadmin') {
+      throw new ForbiddenException('Only superadmin users can assign roles to other users');
     }
 
     return this.usersService.assignRolesToUsers(

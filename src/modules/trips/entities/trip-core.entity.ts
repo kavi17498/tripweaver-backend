@@ -2,6 +2,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   IsArray,
+  ArrayNotEmpty,
   IsDateString,
   IsEnum,
   IsNotEmpty,
@@ -15,6 +16,11 @@ import { Destination } from './destination.entity';
 import { Included } from './included.entity';
 import { Itinerary } from './itinerary.entity';
 import { Participant } from './participant.entity';
+
+export enum TripPaymentMethod {
+  PAY_ONLINE = 'Pay Online',
+  PAY_TO_GUIDE_ON_TRIP_DAY = 'Pay to Guide on Trip Day',
+}
 
 export class MainDestination {
   @ApiProperty({ description: 'Main destination name', example: 'Galle Fort' })
@@ -133,6 +139,18 @@ export class TripCore {
   @ValidateNested()
   @Type(() => Included)
   included!: Included;
+
+  @ApiProperty({
+    description: 'Accepted payment methods for the trip',
+    enum: TripPaymentMethod,
+    isArray: true,
+    example: [TripPaymentMethod.PAY_ONLINE, TripPaymentMethod.PAY_TO_GUIDE_ON_TRIP_DAY],
+  })
+  @IsNotEmpty()
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsEnum(TripPaymentMethod, { each: true })
+  paymentMethods!: TripPaymentMethod[];
 
   @ApiProperty({
     description: 'Trip participants',

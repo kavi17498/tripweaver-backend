@@ -37,6 +37,16 @@ export class CreateUserDto {
   @IsOptional()
   @IsString()
   profileImage?: string;
+  
+  @ApiPropertyOptional({ description: "User's date of birth (YYYY-MM-DD)", example: '1990-05-20' })
+  @IsOptional()
+  @IsString()
+  dateOfBirth?: Date;
+  
+  @ApiPropertyOptional({ description: "User's gender", example: 'male' })
+  @IsOptional()
+  @IsString()
+  gender?: string;
 
   @ApiPropertyOptional({ description: 'User bio', example: 'Travel enthusiast' })
   @IsOptional()

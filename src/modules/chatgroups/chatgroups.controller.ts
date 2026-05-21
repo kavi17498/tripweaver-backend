@@ -9,6 +9,8 @@ import {
   HttpCode,
   HttpStatus,
   Query,
+  Request,
+  BadRequestException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -66,8 +68,17 @@ export class ChatGroupsController {
     description: 'List of all chat groups',
     type: [ChatGroup],
   })
-  async findAll(): Promise<ChatGroup[]> {
-    return this.chatGroupsService.findAll();
+  async findAll(@Request() req: any): Promise<ChatGroup[]> {
+    // Return chat groups that the authenticated user administers or is a member of
+    const user = req?.user as Record<string, unknown> | undefined;
+    const uid = user && typeof user === 'object' && 'uid' in user ? (user as any).uid : undefined;
+
+    if (!uid) {
+      // If no authenticated user found, return empty list
+      return [];
+    }
+
+    return this.chatGroupsService.findForUser(uid);
   }
 
   /**
@@ -92,6 +103,22 @@ export class ChatGroupsController {
   @ApiNotFoundResponse({ description: 'No chat group found for this trip' })
   async findByTripId(@Param('tripId') tripId: string): Promise<ChatGroup[]> {
     return this.chatGroupsService.findByTripId(tripId);
+  }
+
+  /**
+   * Mark a chat group's unread count as read for the current user
+   */
+  @Post(':id/mark-read')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Mark chat group as read for current user' })
+  async markRead(@Param('id') id: string, @Request() req: any): Promise<ChatGroup> {
+    const user = req?.user as Record<string, unknown> | undefined;
+    const uid = user && typeof user === 'object' && 'uid' in user ? (user as any).uid : undefined;
+    if (!uid) {
+      throw new BadRequestException('Missing authenticated user');
+    }
+
+    return this.chatGroupsService.markRead(id, uid);
   }
 
   /**

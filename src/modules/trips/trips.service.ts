@@ -11,26 +11,78 @@ import { CreateTripDto } from './dto/create-trip.dto';
 import { UpdateParticipantDto } from './dto/update-participant.dto';
 import { UpdateTripDto } from './dto/update-trip.dto';
 import { TripStatus } from './entities/trip-status.enum';
+import { TripPaymentMethod } from './entities/trip-core.entity';
 import { Participant } from './entities/participant.entity';
+import { TripCategory } from './entities/trip-category.enum';
+import { ApprovedPublicTripsQueryDto } from './dto/approved-public-trips-query.dto';
+import { TripCardDto } from './dto/trip-card.dto';
+import { UsersService } from '../users/users.service';
+import { ChatGroupsService } from '../chatgroups/chatgroups.service';
 
 @Injectable()
 export class TripsService {
   private readonly collectionName = 'trips';
 
-  constructor(private firebaseService: FirebaseService) {}
+  // small cache for organizerName lookups to avoid repeated DB calls
+  private organizerNameCache = new Map<string, string>();
+
+  private isTripExpired(endDate?: string): boolean {
+    if (!endDate) return true;
+
+    const tripEnd = new Date(`${endDate}T23:59:59.999`);
+    if (Number.isNaN(tripEnd.getTime())) return true;
+
+    return new Date() > tripEnd;
+  }
+
+  constructor(
+    private firebaseService: FirebaseService,
+    private usersService: UsersService,
+    private chatGroupsService: ChatGroupsService,
+  ) {}
+
+  private async resolveOrganizerName(organizerId?: string): Promise<string> {
+    if (!organizerId) return '';
+    if (this.organizerNameCache.has(organizerId)) {
+      return this.organizerNameCache.get(organizerId)!;
+    }
+
+    try {
+      const user = await this.usersService.findOne(organizerId);
+      const name = `${user.firstName || ''} ${user.lastName || ''}`.trim() || organizerId;
+      this.organizerNameCache.set(organizerId, name);
+      return name;
+    } catch (_) {
+      // If user not found or error, fall back to id
+      this.organizerNameCache.set(organizerId, organizerId);
+      return organizerId;
+    }
+  }
 
   /**
    * Create a new trip
    */
-  async create(createTripDto: CreateTripDto): Promise<Trip> {
+  async create(createTripDto: CreateTripDto, userRole?: string): Promise<Trip> {
     const db = this.firebaseService.getFirestore();
+    const isPrivilegedCreator =
+      userRole === 'admin' || userRole === 'superadmin' || userRole === 'guide';
+
+    if (
+      !isPrivilegedCreator &&
+      createTripDto.tripCategory !== TripCategory.PRIVATE_TRIP
+    ) {
+      throw new BadRequestException(
+        'Regular users can only create private trips. Admin, superadmin, and guide users can create all trip types.',
+      );
+    }
 
     // Validate date range
     const startDate = new Date(createTripDto.startDate);
     const endDate = new Date(createTripDto.endDate);
 
-    if (startDate >= endDate) {
-      throw new BadRequestException('End date must be after start date');
+    if (startDate > endDate) {
+      // Allow startDate === endDate for one-day trips
+      throw new BadRequestException('End date must be the same or after the start date');
     }
 
     const photos = createTripDto.photos ?? [];
@@ -55,6 +107,15 @@ export class TripsService {
 
     const docRef = await db.collection(this.collectionName).add(newTrip);
     const id = docRef.id;
+
+    await this.chatGroupsService.ensureTripChatGroup({
+      tripId: id,
+      name: newTrip.tripName,
+      adminId: newTrip.organizer,
+      adminName: await this.resolveOrganizerName(newTrip.organizer),
+      description: `Discussion group for ${newTrip.tripName}`,
+      members: [newTrip.organizer],
+    });
 
     return { ...newTrip, id };
   }
@@ -163,8 +224,9 @@ export class TripsService {
       const startDate = new Date(updateTripDto.startDate);
       const endDate = new Date(updateTripDto.endDate);
 
-      if (startDate >= endDate) {
-        throw new BadRequestException('End date must be after start date');
+      if (startDate > endDate) {
+        // Allow startDate === endDate for one-day trips
+        throw new BadRequestException('End date must be the same or after the start date');
       }
     }
 
@@ -209,6 +271,40 @@ export class TripsService {
     const db = this.firebaseService.getFirestore();
 
     const trip = await this.findOne(tripId);
+    const availablePaymentMethods = trip.paymentMethods ?? [];
+
+    if (!availablePaymentMethods.length) {
+      throw new BadRequestException('This trip does not have any payment methods configured.');
+    }
+
+    const selectedPaymentMethod =
+      request.paymentMethod ??
+      (availablePaymentMethods.length === 1 ? availablePaymentMethods[0] : undefined);
+
+    if (!selectedPaymentMethod) {
+      throw new BadRequestException('Please select a payment method for this booking.');
+    }
+
+    if (!availablePaymentMethods.includes(selectedPaymentMethod as TripPaymentMethod)) {
+      throw new BadRequestException('The selected payment method is not available for this trip.');
+    }
+
+    if (trip.status !== TripStatus.APPROVED) {
+      throw new BadRequestException('This trip is not available for booking.');
+    }
+
+    if (this.isTripExpired(trip.endDate)) {
+      throw new BadRequestException('This trip has expired.');
+    }
+
+    // Enforce trip-category specific booking rules (server-authoritative)
+    const category = trip.tripCategory;
+
+    // If trip is already explicitly reserved (for family/solo), prevent further bookings
+    const isReservedFor = (trip as any).reservedFor as string | undefined;
+    if (isReservedFor === 'family' || isReservedFor === 'solo') {
+      throw new BadRequestException('This trip has been reserved and is no longer bookable.');
+    }
 
     const newParticipants: Participant[] = request.participants.map((participant) => ({
       participantId: participant.participantId ?? randomUUID(),
@@ -225,6 +321,24 @@ export class TripsService {
       trip.participants = [];
     }
 
+    // Prevent duplicate bookings by the same user for the same trip
+    const existingParticipants = trip.participants || [];
+    for (const np of newParticipants) {
+      if (np.parentUserId) {
+        const duplicate = existingParticipants.find((ep) => ep.parentUserId && ep.parentUserId === np.parentUserId);
+        if (duplicate) {
+          throw new BadRequestException('You have already booked this trip.');
+        }
+      }
+
+      if (np.email) {
+        const duplicateByEmail = existingParticipants.find((ep) => ep.email && ep.email === np.email);
+        if (duplicateByEmail) {
+          throw new BadRequestException('A participant with this email has already been booked for this trip.');
+        }
+      }
+    }
+
     const nextParticipantCount = trip.participants.length + newParticipants.length;
     if (trip.maxParticipants && nextParticipantCount > trip.maxParticipants) {
       throw new BadRequestException(
@@ -232,12 +346,74 @@ export class TripsService {
       );
     }
 
+    // Category-specific restrictions: Family and Solo trips can only be booked once (one booking may contain multiple family members)
+    if (
+      category === TripCategory.FAMILY_TRIP_WITH_GUIDE ||
+      category === TripCategory.SOLO_TRIP_WITH_GUIDE
+    ) {
+      // If there are already participants, the trip is finished for booking
+      if ((trip.participants || []).length > 0) {
+        // If any of the new participants match existing participants by parentUserId or email,
+        // return a user-friendly message indicating they already booked this trip.
+        const alreadyBooked = newParticipants.some((np) => {
+          if (np.parentUserId) {
+            return existingParticipants.some((ep) => ep.parentUserId && ep.parentUserId === np.parentUserId);
+          }
+          if (np.email) {
+            return existingParticipants.some((ep) => ep.email && ep.email === np.email);
+          }
+          return false;
+        });
+
+        if (alreadyBooked) {
+          throw new BadRequestException('You have already booked this trip.');
+        }
+
+        throw new BadRequestException('This trip is no longer available for booking.');
+      }
+    }
+
     trip.participants.push(...newParticipants);
 
-    await db.collection(this.collectionName).doc(tripId).update({
+    const bookingMemberIds = Array.from(
+      new Set(newParticipants.map((participant) => participant.parentUserId).filter((id): id is string => Boolean(id))),
+    );
+
+    if (bookingMemberIds.length > 0) {
+      const chatGroup = await this.chatGroupsService.ensureTripChatGroup({
+        tripId,
+        name: trip.tripName,
+        adminId: trip.organizer,
+        adminName: await this.resolveOrganizerName(trip.organizer as string | undefined),
+        description: `Discussion group for ${trip.tripName}`,
+        members: [trip.organizer, ...bookingMemberIds],
+      });
+
+      await this.chatGroupsService.addMembers(chatGroup.id!, bookingMemberIds);
+    }
+
+    // If this booking reserves the trip (family or solo), mark reservation metadata
+    const updatePayload: any = {
       participants: trip.participants,
       updatedAt: new Date(),
-    });
+    };
+
+    if (category === TripCategory.FAMILY_TRIP_WITH_GUIDE) {
+      // Reserve for family: set reservedFor and reservedBy (use parentUserId of first participant if available)
+      const reservedBy = newParticipants[0]?.parentUserId ?? null;
+      updatePayload.reservedFor = 'family';
+      updatePayload.reservedByUserId = reservedBy;
+      updatePayload.reservedAt = new Date();
+    }
+
+    if (category === TripCategory.SOLO_TRIP_WITH_GUIDE) {
+      const reservedBy = newParticipants[0]?.parentUserId ?? null;
+      updatePayload.reservedFor = 'solo';
+      updatePayload.reservedByUserId = reservedBy;
+      updatePayload.reservedAt = new Date();
+    }
+
+    await db.collection(this.collectionName).doc(tripId).update(updatePayload);
 
     return this.findOne(tripId);
   }
@@ -320,5 +496,97 @@ export class TripsService {
     });
 
     return trips;
+  }
+
+  /**
+   * Return approved non-private trips as compact TripCardDto objects, with optional filters.
+   */
+  async findApprovedPublicTrips(
+    filters: ApprovedPublicTripsQueryDto,
+  ): Promise<TripCardDto[]> {
+    const approvedTrips = await this.findAll(TripStatus.APPROVED);
+
+    const filtered = approvedTrips.filter((trip) => {
+      if (trip.tripCategory === TripCategory.PRIVATE_TRIP) {
+        return false;
+      }
+
+      const bookedCount = (trip.participants || []).length;
+      const reservedFor = (trip as any).reservedFor as string | undefined;
+      const isFamilyOrSolo =
+        trip.tripCategory === TripCategory.FAMILY_TRIP_WITH_GUIDE ||
+        trip.tripCategory === TripCategory.SOLO_TRIP_WITH_GUIDE;
+
+      // Family and solo trips disappear from home once they have any booking.
+      if (isFamilyOrSolo && (bookedCount > 0 || reservedFor === 'family' || reservedFor === 'solo')) {
+        return false;
+      }
+
+      // Stranger trips stay public until they are fully booked.
+      if (trip.tripCategory === TripCategory.STRANGERS_TRIP_WITH_GUIDE && trip.maxParticipants && bookedCount >= trip.maxParticipants) {
+        return false;
+      }
+
+      if (filters.tripCategory && trip.tripCategory !== filters.tripCategory) {
+        return false;
+      }
+
+      if (filters.tripName && trip.tripName !== filters.tripName) {
+        return false;
+      }
+
+      if (filters.organizer && trip.organizer !== filters.organizer) {
+        return false;
+      }
+
+      if (filters.startLocation && trip.startLocation !== filters.startLocation) {
+        return false;
+      }
+
+      if (filters.startDate && trip.startDate !== filters.startDate) {
+        return false;
+      }
+
+      if (filters.endDate && trip.endDate !== filters.endDate) {
+        return false;
+      }
+
+      if (filters.minPrice !== undefined && trip.price < filters.minPrice) {
+        return false;
+      }
+
+      if (filters.maxPrice !== undefined && trip.price > filters.maxPrice) {
+        return false;
+      }
+
+      return true;
+    });
+
+    const results = await Promise.all(
+      filtered.map(async (trip) => {
+        const mainDestNames = (trip.mainDestinations || []).map((d: any) => d.name || d);
+        const bookedCount = (trip.participants || []).length;
+        const organizerName = await this.resolveOrganizerName(trip.organizer as string | undefined);
+
+        return {
+          id: trip.id as string,
+          tripName: trip.tripName,
+          coverImage: trip.coverImage ?? (trip.photos && trip.photos[0]) ?? '',
+          tripCategory: trip.tripCategory,
+          price: trip.price,
+          startDate: trip.startDate,
+          endDate: trip.endDate,
+          startLocation: trip.startLocation,
+          mainDestinations: mainDestNames,
+          maxParticipants: trip.maxParticipants ?? 0,
+          bookedCount,
+          organizerName: organizerName,
+          rating: (trip as any).rating,
+          status: trip.status,
+        } as TripCardDto;
+      }),
+    );
+
+    return results;
   }
 }
