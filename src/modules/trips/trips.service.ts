@@ -171,6 +171,30 @@ export class TripsService {
   }
 
   /**
+   * Get trips where the user participated but did not create the trip
+   */
+  async findParticipatedTrips(userId: string): Promise<Trip[]> {
+    const db = this.firebaseService.getFirestore();
+    const snapshot = await db.collection(this.collectionName).get();
+
+    const trips: Trip[] = [];
+
+    snapshot.forEach((doc) => {
+      const trip = { id: doc.id, ...doc.data() } as Trip;
+      const isCreator = trip.organizer === userId;
+      const hasParticipated = Array.isArray(trip.participants)
+        ? trip.participants.some((participant) => participant.parentUserId === userId)
+        : false;
+
+      if (!isCreator && hasParticipated) {
+        trips.push(trip);
+      }
+    });
+
+    return trips;
+  }
+
+  /**
    * Get trips by category
    */
   async findByCategory(category: string): Promise<Trip[]> {

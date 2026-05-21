@@ -103,6 +103,31 @@ export class TripsController {
   }
 
   /**
+   * Get trips the user participated in, excluding trips they created
+   * GET /trips/participated
+   */
+  @Get('participated')
+  @ApiOperation({
+    summary: 'Get trips participated by current user',
+    description:
+      'Returns trips where the authenticated user has at least one participant record, but excludes trips created by that same user.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'List of participated trips retrieved successfully',
+    type: [Trip],
+  })
+  async findParticipatedTrips(@Req() request: AuthenticatedRequest): Promise<Trip[]> {
+    const uid = request.user?.uid || request.user?.sub;
+
+    if (!uid) {
+      throw new UnauthorizedException('Unable to extract user identity from token');
+    }
+
+    return this.tripsService.findParticipatedTrips(uid);
+  }
+
+  /**
    * Get trips by organizer
    * GET /trips/organizer/:organizerId
    */
