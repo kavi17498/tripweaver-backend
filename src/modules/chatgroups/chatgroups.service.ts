@@ -89,6 +89,28 @@ export class ChatGroupsService {
   }
 
   /**
+   * Get chat groups where the user is the admin or a member
+   */
+  async findForUser(userId: string): Promise<ChatGroup[]> {
+    const collection = this.getCollection();
+
+    const adminQuerySnapshot = await collection.where('adminId', '==', userId).get();
+    const memberQuerySnapshot = await collection.where('members', 'array-contains', userId).get();
+
+    const map = new Map<string, ChatGroup>();
+
+    adminQuerySnapshot.forEach((doc) => {
+      map.set(doc.id, { id: doc.id, ...doc.data() } as ChatGroup);
+    });
+
+    memberQuerySnapshot.forEach((doc) => {
+      map.set(doc.id, { id: doc.id, ...doc.data() } as ChatGroup);
+    });
+
+    return Array.from(map.values());
+  }
+
+  /**
    * Get a single chat group by ID
    */
   async findOne(id: string): Promise<ChatGroup> {

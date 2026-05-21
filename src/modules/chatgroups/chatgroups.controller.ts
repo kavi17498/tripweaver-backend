@@ -9,6 +9,7 @@ import {
   HttpCode,
   HttpStatus,
   Query,
+  Request,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -66,8 +67,17 @@ export class ChatGroupsController {
     description: 'List of all chat groups',
     type: [ChatGroup],
   })
-  async findAll(): Promise<ChatGroup[]> {
-    return this.chatGroupsService.findAll();
+  async findAll(@Request() req: any): Promise<ChatGroup[]> {
+    // Return chat groups that the authenticated user administers or is a member of
+    const user = req?.user as Record<string, unknown> | undefined;
+    const uid = user && typeof user === 'object' && 'uid' in user ? (user as any).uid : undefined;
+
+    if (!uid) {
+      // If no authenticated user found, return empty list
+      return [];
+    }
+
+    return this.chatGroupsService.findForUser(uid);
   }
 
   /**
