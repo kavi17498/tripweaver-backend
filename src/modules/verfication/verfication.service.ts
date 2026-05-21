@@ -16,6 +16,18 @@ export class VerficationService {
     return this.firebaseService.getFirestore().collection(this.collectionName);
   }
 
+  private asVerfication(doc: FirebaseFirestore.QueryDocumentSnapshot | FirebaseFirestore.DocumentSnapshot): Verfication {
+    return { id: doc.id, ...(doc.data() as any) } as Verfication;
+  }
+
+  private toMillis(value: any): number {
+    if (!value) return 0;
+    if (typeof value?.toMillis === 'function') return value.toMillis();
+    if (typeof value?._seconds === 'number') return value._seconds * 1000;
+    if (value instanceof Date) return value.getTime();
+    return 0;
+  }
+
   async create(userId: string, createVerficationDto: CreateVerficationDto): Promise<Verfication> {
     if (!userId) throw new BadRequestException('Missing user id');
     if (!createVerficationDto.sltdaGuideLicense || !createVerficationDto.nicImageFront || !createVerficationDto.nicImageBack) {
@@ -54,23 +66,97 @@ export class VerficationService {
     }
 
     const items: Verfication[] = [];
-    q.forEach((d) => items.push({ id: d.id, ...(d.data() as any) } as Verfication));
-
-    const toMillis = (value: any): number => {
-      if (!value) return 0;
-      if (typeof value?.toMillis === 'function') return value.toMillis();
-      if (typeof value?._seconds === 'number') return value._seconds * 1000;
-      if (value instanceof Date) return value.getTime();
-      return 0;
-    };
+    q.forEach((d) => items.push(this.asVerfication(d)));
 
     items.sort((a: any, b: any) => {
-      const createdA = toMillis(a?.createdAt);
-      const createdB = toMillis(b?.createdAt);
+      const createdA = this.toMillis(a?.createdAt);
+      const createdB = this.toMillis(b?.createdAt);
       return createdB - createdA;
     });
 
     return items;
+  }
+
+  async findPendingForAdmin(): Promise<Verfication[]> {
+    const snap = await this.getCollection().where('status', '==', 'pending').get();
+    const items: Verfication[] = [];
+    snap.forEach((doc) => items.push(this.asVerfication(doc)));
+
+    items.sort((a: any, b: any) => {
+      const createdA = this.toMillis(a?.createdAt);
+      const createdB = this.toMillis(b?.createdAt);
+      return createdB - createdA;
+    });
+
+    return items;
+  }
+
+  async findInReviewForAdmin(adminId: string): Promise<Verfication[]> {
+    if (!adminId) return [];
+
+    const snap = await this.getCollection()
+      .where('status', '==', 'in-review')
+      .where('inReviewBy', '==', adminId)
+      .get();
+
+    const items: Verfication[] = [];
+    snap.forEach((doc) => items.push(this.asVerfication(doc)));
+
+    items.sort((a: any, b: any) => {
+      const createdA = this.toMillis(a?.createdAt);
+      const createdB = this.toMillis(b?.createdAt);
+      return createdB - createdA;
+    });
+
+    return items;
+  }
+
+  async moveManyToInReview(ids: string[], adminId: string, adminName?: string): Promise<{ movedIds: string[]; skippedIds: string[] }> {
+    if (!adminId) throw new BadRequestException('Missing admin id');
+    if (!Array.isArray(ids) || ids.length === 0) {
+      throw new BadRequestException('Request ids are required');
+    }
+
+    const uniqueIds = Array.from(new Set(ids.filter((id) => typeof id === 'string' && id.trim().length > 0)));
+    if (!uniqueIds.length) {
+      throw new BadRequestException('No valid request ids provided');
+    }
+
+    const refs = uniqueIds.map((id) => this.getCollection().doc(id));
+    const snaps = await Promise.all(refs.map((ref) => ref.get()));
+
+    const batch = this.firebaseService.getFirestore().batch();
+    const movedIds: string[] = [];
+    const skippedIds: string[] = [];
+
+    for (const snap of snaps) {
+      if (!snap.exists) {
+        skippedIds.push(snap.id);
+        continue;
+      }
+
+      const data = snap.data() as any;
+      if (data?.status !== 'pending') {
+        skippedIds.push(snap.id);
+        continue;
+      }
+
+      batch.update(snap.ref, {
+        status: 'in-review',
+        inReviewBy: adminId,
+        inReviewByName: adminName || 'Admin',
+        inReviewAssignedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      movedIds.push(snap.id);
+    }
+
+    if (movedIds.length) {
+      await batch.commit();
+    }
+
+    return { movedIds, skippedIds };
   }
 
   async findOne(id: string, userId?: string): Promise<Verfication> {

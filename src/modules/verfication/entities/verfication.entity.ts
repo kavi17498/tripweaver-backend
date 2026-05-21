@@ -16,6 +16,9 @@ export class Verfication {
         linkedin?: string;
     };
     status?: VerificationStatus;
+    inReviewBy?: string;
+    inReviewByName?: string;
+    inReviewAssignedAt?: unknown;
     createdAt?: unknown;
     updatedAt?: unknown;
 }
