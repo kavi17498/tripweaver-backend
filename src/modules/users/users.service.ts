@@ -247,11 +247,12 @@ export class UsersService {
       const currentUser = await auth.getUser(currentUid);
       const currentRole = (currentUser.customClaims?.role || requesterRole || '').toString().toLowerCase();
       const canAssignGuide = requestedRole === 'guide' && (currentRole === 'admin' || currentRole === 'superadmin');
+      const canAssignUser = requestedRole === 'user' && (currentRole === 'admin' || currentRole === 'superadmin');
       const canAssignOthers = currentRole === 'superadmin';
 
-      if (!canAssignGuide && !canAssignOthers) {
+      if (!canAssignGuide && !canAssignUser && !canAssignOthers) {
         throw new ForbiddenException(
-          'Only superadmin users can assign roles. Admin can assign guide role only.',
+          'Only superadmin users can assign roles. Admin can assign user or guide roles only.',
         );
       }
     } catch (error: unknown) {
@@ -310,13 +311,12 @@ export class UsersService {
           role: role.trim(),
         });
 
-        await db.collection(this.collectionName).doc(userId).set(
-          {
-            isVerified: true,
-            updatedAt: new Date(),
-          },
-          { merge: true },
-        );
+        const nextUserUpdate: Record<string, unknown> = {
+          updatedAt: new Date(),
+          isVerified: requestedRole === 'user' ? false : true,
+        };
+
+        await db.collection(this.collectionName).doc(userId).set(nextUserUpdate, { merge: true });
 
         if (requestedRole === 'guide') {
           await db.collection('usertogudieLogs').add({
@@ -324,6 +324,19 @@ export class UsersService {
             assignedBy: currentUid,
             role: 'guide',
             createdAt: new Date(),
+          });
+        }
+
+        if (requestedRole === 'user') {
+          const notificationsCollection = db.collection('notifications');
+          await notificationsCollection.add({
+            userId,
+            type: 'account-alert',
+            title: 'Role changed to user',
+            description: 'Your account role has been changed to user and verification has been reset to false by an admin.',
+            read: false,
+            createdAt: new Date(),
+            updatedAt: new Date(),
           });
         }
 
