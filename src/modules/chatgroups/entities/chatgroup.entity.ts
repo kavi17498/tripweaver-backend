@@ -39,6 +39,33 @@ export class ChatGroup {
   createdAt?: Date;
 
   @ApiProperty({
+    description: 'Chat group last message timestamp',
+    example: '2026-03-20T10:30:00Z',
+    required: false,
+  })
+  lastMessageAt?: Date;
+
+  @ApiProperty({
+    description: 'Last message preview',
+    example: 'Hey, are we still on for tomorrow?',
+    required: false,
+  })
+  lastMessage?: string;
+
+  @ApiProperty({
+    description: 'Last sender user ID',
+    example: 'user_12345',
+    required: false,
+  })
+  lastMessageSenderId?: string;
+
+  @ApiProperty({
+    description: 'Unread message counters per user',
+    required: false,
+  })
+  unreadCounts?: Record<string, number>;
+
+  @ApiProperty({
     description: 'Chat group last update timestamp',
     example: '2026-03-20T10:30:00Z',
     required: false,

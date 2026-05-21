@@ -19,6 +19,7 @@ export class ChatGroupsService {
    */
   async create(createChatGroupDto: CreateChatGroupDto): Promise<ChatGroup> {
     const db = this.firebaseService.getFirestore();
+    const now = new Date();
 
     const existing = await this.findByTripId(createChatGroupDto.tripId);
     if (existing.length > 0) {
@@ -28,8 +29,11 @@ export class ChatGroupsService {
     const newChatGroup: ChatGroup = {
       ...createChatGroupDto,
       members: createChatGroupDto.members ?? [createChatGroupDto.adminId],
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      lastMessage: '',
+      lastMessageAt: now,
+      unreadCounts: {},
+      createdAt: now,
+      updatedAt: now,
     };
 
     const docRef = await db.collection(this.collectionName).add(newChatGroup);
