@@ -254,9 +254,12 @@ export class ChatGroupsService {
     }
 
     const updatedMembers = chatGroup.members.filter((id) => id !== userId);
+    const updatedUnreadCounts = { ...(chatGroup.unreadCounts ?? {}) } as Record<string, number>;
+    delete updatedUnreadCounts[userId];
 
     await db.collection(this.collectionName).doc(chatGroupId).update({
       members: updatedMembers,
+      unreadCounts: updatedUnreadCounts,
       updatedAt: new Date(),
     });
 

@@ -18,6 +18,8 @@ import { ApprovedPublicTripsQueryDto } from './dto/approved-public-trips-query.d
 import { TripCardDto } from './dto/trip-card.dto';
 import { UsersService } from '../users/users.service';
 import { ChatGroupsService } from '../chatgroups/chatgroups.service';
+import { ChatMessagesService } from '../chatmessages/chatmessages.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class TripsService {
@@ -39,6 +41,8 @@ export class TripsService {
     private firebaseService: FirebaseService,
     private usersService: UsersService,
     private chatGroupsService: ChatGroupsService,
+    private chatMessagesService: ChatMessagesService,
+    private notificationsService: NotificationsService,
   ) {}
 
   private async resolveOrganizerName(organizerId?: string): Promise<string> {
@@ -56,6 +60,15 @@ export class TripsService {
       // If user not found or error, fall back to id
       this.organizerNameCache.set(organizerId, organizerId);
       return organizerId;
+    }
+  }
+
+  private async resolveUserDisplayName(userId: string): Promise<string> {
+    try {
+      const user = await this.usersService.findOne(userId);
+      return `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email || userId;
+    } catch {
+      return userId;
     }
   }
 
@@ -192,6 +205,78 @@ export class TripsService {
     });
 
     return trips;
+  }
+
+  /**
+   * Cancel the current user's booking for a trip.
+   */
+  async cancelBooking(tripId: string, userId: string): Promise<Trip> {
+    const db = this.firebaseService.getFirestore();
+    const docRef = db.collection(this.collectionName).doc(tripId);
+    const doc = await docRef.get();
+
+    if (!doc.exists) {
+      throw new NotFoundException(`Trip with ID ${tripId} not found`);
+    }
+
+    const trip = { id: doc.id, ...doc.data() } as Trip;
+
+    if (trip.organizer === userId) {
+      throw new BadRequestException('Trip creators cannot cancel their own trip booking here.');
+    }
+
+    const existingParticipants = Array.isArray(trip.participants) ? trip.participants : [];
+    const matchedParticipants = existingParticipants.filter((participant) => participant.parentUserId === userId);
+
+    if (matchedParticipants.length === 0) {
+      throw new BadRequestException('You do not have an active booking for this trip.');
+    }
+
+    const updatedParticipants = existingParticipants.filter((participant) => participant.parentUserId !== userId);
+    const userName = await this.resolveUserDisplayName(userId);
+    const chatGroup = await this.chatGroupsService.findOneByTripId(tripId);
+    const cancelMessage = `${userName} said: Sorry, I am leaving the trip.`;
+
+    if (chatGroup) {
+      await this.chatMessagesService.create(chatGroup.id!, {
+        senderId: userId,
+        senderName: userName,
+        message: cancelMessage,
+      });
+    }
+
+    await docRef.update({
+      participants: updatedParticipants,
+      updatedAt: new Date(),
+    });
+
+    if (chatGroup) {
+      await this.chatGroupsService.removeMember(chatGroup.id!, userId);
+    }
+
+    await this.notificationsService.create({
+      userId: trip.organizer,
+      type: 'account-alert',
+      title: 'Booking canceled',
+      description: `${userName} canceled their booking for "${trip.tripName}".`,
+      tripId,
+      read: false,
+    });
+
+    const paymentsSnapshot = await db.collection('payments').where('tripId', '==', tripId).get();
+    const deletions: Array<Promise<unknown>> = [];
+
+    paymentsSnapshot.forEach((paymentDoc) => {
+      const data = paymentDoc.data() as Record<string, unknown>;
+      const paymentUserId = data.userId ?? data.parentUserId ?? data.buyerId ?? data.customerId ?? data.payerId;
+      if (paymentUserId === userId) {
+        deletions.push(paymentDoc.ref.delete());
+      }
+    });
+
+    await Promise.all(deletions);
+
+    return this.findOne(tripId);
   }
 
   /**

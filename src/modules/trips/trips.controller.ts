@@ -128,6 +128,41 @@ export class TripsController {
   }
 
   /**
+   * Cancel the authenticated user's booking for a trip
+   * DELETE /trips/:id/booking
+   */
+  @Delete(':id/booking')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Cancel current user booking',
+    description:
+      'Removes the authenticated user from trip participants, removes them from the related chat group, posts a cancellation message, notifies the trip creator, and removes matching payment records when present.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Unique trip identifier',
+    example: 'trip_12345',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Booking canceled successfully',
+    type: Trip,
+  })
+  @ApiNotFoundResponse({ description: 'Trip or booking not found' })
+  async cancelBooking(
+    @Param('id') id: string,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<Trip> {
+    const uid = request.user?.uid || request.user?.sub;
+
+    if (!uid) {
+      throw new UnauthorizedException('Unable to extract user identity from token');
+    }
+
+    return this.tripsService.cancelBooking(id, uid);
+  }
+
+  /**
    * Get trips by organizer
    * GET /trips/organizer/:organizerId
    */
