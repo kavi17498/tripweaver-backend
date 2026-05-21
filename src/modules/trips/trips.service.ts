@@ -2,6 +2,8 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { FirebaseService } from '../../firebase/firebase.service';
@@ -40,6 +42,7 @@ export class TripsService {
   constructor(
     private firebaseService: FirebaseService,
     private usersService: UsersService,
+    @Inject(forwardRef(() => ChatGroupsService))
     private chatGroupsService: ChatGroupsService,
     private chatMessagesService: ChatMessagesService,
     private notificationsService: NotificationsService,

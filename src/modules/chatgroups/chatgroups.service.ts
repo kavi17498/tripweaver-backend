@@ -1,14 +1,34 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Inject, forwardRef } from '@nestjs/common';
 import { FirebaseService } from '../../firebase/firebase.service';
 import { ChatGroup } from './entities/chatgroup.entity';
 import { CreateChatGroupDto } from './dto/create-chatgroup.dto';
 import { UpdateChatGroupDto } from './dto/update-chatgroup.dto';
+import { TripsService } from '../trips/trips.service';
+import { UsersService } from '../users/users.service';
+import { Participant } from '../trips/entities/participant.entity';
+
+type TripChatParticipant = {
+  participant: Participant;
+  profile: Awaited<ReturnType<UsersService['findOne']>> | null;
+};
+
+export type TripChatContext = {
+  chatGroup: ChatGroup;
+  trip: Awaited<ReturnType<TripsService['findOne']>>;
+  organizer: Awaited<ReturnType<UsersService['findOne']>>;
+  participants: TripChatParticipant[];
+};
 
 @Injectable()
 export class ChatGroupsService {
   private readonly collectionName = 'chatgroups';
 
-  constructor(private firebaseService: FirebaseService) {}
+  constructor(
+    private firebaseService: FirebaseService,
+    @Inject(forwardRef(() => TripsService))
+    private readonly tripsService: TripsService,
+    private readonly usersService: UsersService,
+  ) {}
 
   private getCollection() {
     return this.firebaseService.getFirestore().collection(this.collectionName);
@@ -147,6 +167,46 @@ export class ChatGroupsService {
   async findOneByTripId(tripId: string): Promise<ChatGroup | null> {
     const chatGroups = await this.findByTripId(tripId);
     return chatGroups[0] ?? null;
+  }
+
+  async getTripChatContext(tripId: string, requesterId: string): Promise<TripChatContext> {
+    if (!requesterId) {
+      throw new ForbiddenException('Missing authenticated user');
+    }
+
+    const chatGroup = await this.findOneByTripId(tripId);
+    if (!chatGroup) {
+      throw new NotFoundException(`Chat group for trip ${tripId} not found`);
+    }
+
+    const canAccess = chatGroup.adminId === requesterId || (chatGroup.members ?? []).includes(requesterId);
+    if (!canAccess) {
+      throw new ForbiddenException('You are not allowed to view this chat context');
+    }
+
+    const trip = await this.tripsService.findOne(tripId);
+    const organizer = await this.usersService.findOne(trip.organizer);
+    const participants = await Promise.all(
+      (trip.participants ?? []).map(async (participant) => {
+        if (!participant.parentUserId) {
+          return { participant, profile: null };
+        }
+
+        try {
+          const profile = await this.usersService.findOne(participant.parentUserId);
+          return { participant, profile };
+        } catch {
+          return { participant, profile: null };
+        }
+      }),
+    );
+
+    return {
+      chatGroup,
+      trip,
+      organizer,
+      participants,
+    };
   }
 
   /**
