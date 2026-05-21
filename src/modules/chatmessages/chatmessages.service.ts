@@ -75,7 +75,44 @@ export class ChatMessagesService {
     };
 
     const docRef = await db.collection(this.collectionName).add(message);
-    return { ...message, id: docRef.id };
+    const created = { ...message, id: docRef.id } as ChatMessageEntity;
+
+    // Update chat group summary: lastMessage, lastMessageAt, and unread counts for members
+    try {
+      const groupDocRef = db.collection('chatgroups').doc(chatGroupId);
+      const groupSnap = await groupDocRef.get();
+      if (groupSnap.exists) {
+        const groupData: any = groupSnap.data();
+        const members: string[] = Array.isArray(groupData?.members) ? groupData.members : [];
+
+        // Build new unreadCounts map: increment for all members except sender
+        const prevUnread: Record<string, number> = groupData?.unreadCounts ?? {};
+        const nextUnread: Record<string, number> = { ...(prevUnread ?? {}) } as Record<string, number>;
+        for (const m of members) {
+          if (!m) continue;
+          if (m === dto.senderId) {
+            // sender should not have unread increment
+            nextUnread[m] = nextUnread[m] ?? 0;
+            continue;
+          }
+          nextUnread[m] = (nextUnread[m] ?? 0) + 1;
+        }
+
+        await groupDocRef.update({
+          lastMessage: message.message ?? (message.imageUrl ? "[image]" : ""),
+          lastMessageAt: now,
+          lastMessageSenderId: dto.senderId,
+          unreadCounts: nextUnread,
+          updatedAt: now,
+        });
+      }
+    } catch (err) {
+      // non-fatal: summary update failed
+      // eslint-disable-next-line no-console
+      console.warn('Failed to update chat group summary', err);
+    }
+
+    return created;
   }
 
   async ensureChatGroupExists(chatGroupId: string): Promise<void> {

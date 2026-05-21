@@ -222,6 +222,22 @@ export class ChatGroupsService {
     return this.findOne(chatGroupId);
   }
 
+  async markRead(chatGroupId: string, userId: string): Promise<ChatGroup> {
+    const docRef = this.getCollection().doc(chatGroupId);
+    const docSnap = await docRef.get();
+    if (!docSnap.exists) throw new NotFoundException(`Chat group with ID ${chatGroupId} not found`);
+
+    const data: any = docSnap.data();
+    const unread: Record<string, number> = data?.unreadCounts ?? {};
+    if (unread[userId]) {
+      unread[userId] = 0;
+      await docRef.update({ unreadCounts: unread, updatedAt: new Date() });
+    }
+
+    const updated = await docRef.get();
+    return { id: updated.id, ...updated.data() } as ChatGroup;
+  }
+
   /**
    * Remove a member from a chat group
    */

@@ -10,6 +10,7 @@ import {
   HttpStatus,
   Query,
   Request,
+  BadRequestException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -102,6 +103,22 @@ export class ChatGroupsController {
   @ApiNotFoundResponse({ description: 'No chat group found for this trip' })
   async findByTripId(@Param('tripId') tripId: string): Promise<ChatGroup[]> {
     return this.chatGroupsService.findByTripId(tripId);
+  }
+
+  /**
+   * Mark a chat group's unread count as read for the current user
+   */
+  @Post(':id/mark-read')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Mark chat group as read for current user' })
+  async markRead(@Param('id') id: string, @Request() req: any): Promise<ChatGroup> {
+    const user = req?.user as Record<string, unknown> | undefined;
+    const uid = user && typeof user === 'object' && 'uid' in user ? (user as any).uid : undefined;
+    if (!uid) {
+      throw new BadRequestException('Missing authenticated user');
+    }
+
+    return this.chatGroupsService.markRead(id, uid);
   }
 
   /**
