@@ -4,6 +4,10 @@ import { CreateVerficationDto } from './dto/create-verfication.dto';
 import { UpdateVerficationDto } from './dto/update-verfication.dto';
 import { BulkMoveInReviewDto } from './dto/bulk-move-in-review.dto';
 
+class RejectVerificationDto {
+  reason!: string;
+}
+
 type AuthenticatedRequest = Request & {
   user?: {
     uid?: string;
@@ -75,6 +79,20 @@ export class VerficationController {
     const { uid, role, name } = this.getAuthContext(req);
     this.assertAdmin(role);
     return this.verficationService.moveManyToInReview(body.ids, uid, name);
+  }
+
+  @Patch('admin/:id/approve')
+  async approveByAdmin(@Param('id') id: string, @Request() req: AuthenticatedRequest) {
+    const { uid, role, name } = this.getAuthContext(req);
+    this.assertAdmin(role);
+    return this.verficationService.approveByAdmin(id, uid, name);
+  }
+
+  @Patch('admin/:id/reject')
+  async rejectByAdmin(@Param('id') id: string, @Body() body: RejectVerificationDto, @Request() req: AuthenticatedRequest) {
+    const { uid, role, name } = this.getAuthContext(req);
+    this.assertAdmin(role);
+    return this.verficationService.rejectByAdmin(id, uid, body.reason, name);
   }
 
   @Get(':id')

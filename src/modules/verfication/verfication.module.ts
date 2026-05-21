@@ -4,9 +4,10 @@ import { VerficationController } from './verfication.controller';
 import { UsersModule } from '../users/users.module';
 import { TripsModule } from '../trips/trips.module';
 import { VerificationMeetingModule } from '../verificationmeeting/verificationmeeting.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
-  imports: [UsersModule, TripsModule, VerificationMeetingModule],
+  imports: [UsersModule, TripsModule, VerificationMeetingModule, NotificationsModule],
   controllers: [VerficationController],
   providers: [VerficationService],
 })

@@ -8,6 +8,7 @@ import { Verfication } from './entities/verfication.entity';
 import { UsersService } from '../users/users.service';
 import { TripsService } from '../trips/trips.service';
 import { VerificationMeetingService } from '../verificationmeeting/verificationmeeting.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class VerficationService {
@@ -18,6 +19,7 @@ export class VerficationService {
     private readonly usersService: UsersService,
     private readonly tripsService: TripsService,
     private readonly verificationMeetingService: VerificationMeetingService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   private getCollection() {
@@ -192,6 +194,64 @@ export class VerficationService {
       trips,
       meeting,
     };
+  }
+
+  async approveByAdmin(id: string, adminId: string, adminName?: string): Promise<Verfication> {
+    const docRef = this.getCollection().doc(id);
+    const snap = await docRef.get();
+    if (!snap.exists) throw new NotFoundException('Verification request not found');
+
+    const data = snap.data() as any;
+    if (data.status === 'rejected') {
+      throw new BadRequestException('Cannot approve a rejected request');
+    }
+
+    await docRef.update({
+      status: 'approved',
+      approvedBy: adminId,
+      approvedByName: adminName || 'Admin',
+      approvedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    const updatedSnap = await docRef.get();
+    return { id: updatedSnap.id, ...(updatedSnap.data() as any) } as Verfication;
+  }
+
+  async rejectByAdmin(id: string, adminId: string, reason: string, adminName?: string): Promise<Verfication> {
+    const docRef = this.getCollection().doc(id);
+    const snap = await docRef.get();
+    if (!snap.exists) throw new NotFoundException('Verification request not found');
+
+    const data = snap.data() as any;
+    if (data.status === 'approved') {
+      throw new BadRequestException('Cannot reject an approved request');
+    }
+
+    const trimmedReason = reason?.trim();
+    if (!trimmedReason) {
+      throw new BadRequestException('Rejection reason is required');
+    }
+
+    await docRef.update({
+      status: 'rejected',
+      rejectionReason: trimmedReason,
+      rejectedBy: adminId,
+      rejectedByName: adminName || 'Admin',
+      rejectedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    await this.notificationsService.create({
+      userId: data.userId,
+      type: 'account-alert',
+      title: 'Verification request rejected',
+      description: `Your verification request was rejected. Reason: ${trimmedReason}`,
+      read: false,
+    });
+
+    const updatedSnap = await docRef.get();
+    return { id: updatedSnap.id, ...(updatedSnap.data() as any) } as Verfication;
   }
 
   async update(id: string, userId: string, updateDto: UpdateVerficationDto): Promise<Verfication> {

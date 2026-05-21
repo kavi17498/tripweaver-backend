@@ -19,6 +19,13 @@ export class Verfication {
     inReviewBy?: string;
     inReviewByName?: string;
     inReviewAssignedAt?: unknown;
+    approvedBy?: string;
+    approvedByName?: string;
+    approvedAt?: unknown;
+    rejectionReason?: string;
+    rejectedBy?: string;
+    rejectedByName?: string;
+    rejectedAt?: unknown;
     createdAt?: unknown;
     updatedAt?: unknown;
 }
