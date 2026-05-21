@@ -288,6 +288,7 @@ export class UsersService {
 
     const assigned: string[] = [];
     const failed: Array<{ userId: string; reason: string }> = [];
+    const db = this.firebaseService.getFirestore();
 
     for (const userId of normalizedUserIds) {
       // Skip current user - keep them as superadmin
@@ -303,6 +304,14 @@ export class UsersService {
           ...existingClaims,
           role: role.trim(),
         });
+
+        await db.collection(this.collectionName).doc(userId).set(
+          {
+            isVerified: true,
+            updatedAt: new Date(),
+          },
+          { merge: true },
+        );
 
         assigned.push(userId);
       } catch (error: unknown) {
