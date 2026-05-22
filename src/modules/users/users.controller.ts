@@ -28,6 +28,7 @@ import { Request } from 'express';
 import { UsersService } from './users.service';
 import { CreateUserDto, UpdateUserDto, AssignRoleDto } from './dto';
 import { User } from './entities/user.entity';
+import { Public } from '../../auth/public.decorator';
 
 type AuthenticatedRequest = Request & {
   user?: {
@@ -186,6 +187,26 @@ export class UsersController {
     }
 
     return this.usersService.getCurrentUserRole(uid);
+  }
+
+  /**
+   * Get public profile and organized trips for an organizer
+   * GET /users/organizer/:id
+   */
+  @Public()
+  @Get('organizer/:id')
+  @ApiOperation({
+    summary: 'Get organizer public profile',
+    description: 'Retrieve public profile details, ratings, and public trips for an organizer by their ID.',
+  })
+  @ApiParam({ name: 'id', description: 'Organizer user ID', example: 'user_12345' })
+  @ApiResponse({
+    status: 200,
+    description: 'Organizer profile retrieved successfully',
+  })
+  @ApiNotFoundResponse({ description: 'Organizer not found' })
+  async getOrganizerPublicProfile(@Param('id') id: string): Promise<any> {
+    return this.usersService.getOrganizerPublicProfile(id);
   }
 
   /**

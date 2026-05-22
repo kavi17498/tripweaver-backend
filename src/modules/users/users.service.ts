@@ -361,4 +361,137 @@ export class UsersService {
       failed,
     };
   }
+
+  private toDate(value: unknown): Date | null {
+    if (!value) return null;
+    if (value instanceof Date) {
+      return value;
+    }
+
+    if (
+      value &&
+      typeof value === 'object' &&
+      'toDate' in value &&
+      typeof (value as { toDate: () => Date }).toDate === 'function'
+    ) {
+      return (value as { toDate: () => Date }).toDate();
+    }
+
+    if (typeof value === 'string' || typeof value === 'number') {
+      const parsed = new Date(value);
+      if (!Number.isNaN(parsed.getTime())) {
+        return parsed;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Get public profile and organized trips for an organizer
+   */
+  async getOrganizerPublicProfile(id: string): Promise<any> {
+    const db = this.firebaseService.getFirestore();
+
+    // 1. Get organizer user document
+    const userDoc = await db.collection(this.collectionName).doc(id).get();
+    if (!userDoc.exists) {
+      throw new NotFoundException(`Organizer with ID ${id} not found`);
+    }
+
+    const userData = userDoc.data() || {};
+    const organizer = {
+      id: userDoc.id,
+      firstName: userData.firstName || '',
+      lastName: userData.lastName || '',
+      profileImage: userData.profileImage || '',
+      bio: userData.bio || '',
+      city: userData.city || '',
+      country: userData.country || '',
+      isVerified: userData.isVerified || false,
+      createdAt: this.toDate(userData.createdAt),
+    };
+
+    // 2. Fetch the trips organized by this user
+    const tripsSnapshot = await db
+      .collection('trips')
+      .where('organizer', '==', id)
+      .get();
+
+    const trips: any[] = [];
+
+    tripsSnapshot.forEach((doc) => {
+      const data = doc.data() || {};
+      // Skip private trips
+      if (data.tripCategory !== 'Private trip') {
+        trips.push({
+          id: doc.id,
+          ...data,
+          createdAt: this.toDate(data.createdAt),
+          updatedAt: this.toDate(data.updatedAt),
+          statusUpdatedAt: this.toDate(data.statusUpdatedAt),
+        });
+      }
+    });
+
+    // 3. Fetch reviews for these trips
+    const tripsWithReviews = await Promise.all(
+      trips.map(async (trip) => {
+        const reviewsSnapshot = await db
+          .collection('reviews')
+          .where('tripId', '==', trip.id)
+          .get();
+
+        const reviews: any[] = [];
+        let totalRating = 0;
+
+        reviewsSnapshot.forEach((rDoc) => {
+          const rData = rDoc.data() || {};
+          const mappedReview = {
+            id: rDoc.id,
+            ...rData,
+            createdAt: this.toDate(rData.createdAt),
+            updatedAt: this.toDate(rData.updatedAt || rData.createdAt),
+          };
+          reviews.push(mappedReview);
+          totalRating += Number(rData.rating || 0);
+        });
+
+        // Sort reviews by date descending
+        reviews.sort((a, b) => {
+          const aTime = a.createdAt ? a.createdAt.getTime() : 0;
+          const bTime = b.createdAt ? b.createdAt.getTime() : 0;
+          return bTime - aTime;
+        });
+
+        const averageRating = reviews.length > 0 ? totalRating / reviews.length : 0;
+
+        return {
+          ...trip,
+          reviews,
+          averageRating: parseFloat(averageRating.toFixed(1)),
+          reviewCount: reviews.length,
+        };
+      })
+    );
+
+    // Calculate overall organizer statistics
+    const allReviews = tripsWithReviews.flatMap((t) => t.reviews);
+    const overallRating =
+      allReviews.length > 0
+        ? parseFloat(
+            (
+              allReviews.reduce((sum, r) => sum + r.rating, 0) /
+              allReviews.length
+            ).toFixed(1),
+          )
+        : null;
+
+    return {
+      organizer,
+      trips: tripsWithReviews,
+      overallRating,
+      totalReviews: allReviews.length,
+    };
+  }
 }

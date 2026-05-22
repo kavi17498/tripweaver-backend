@@ -685,11 +685,42 @@ export class TripsService {
       return true;
     });
 
+    const organizerRatingCache = new Map<string, number | null>();
+
     const results = await Promise.all(
       filtered.map(async (trip) => {
         const mainDestNames = (trip.mainDestinations || []).map((d: any) => d.name || d);
         const bookedCount = (trip.participants || []).length;
         const organizerName = await this.resolveOrganizerName(trip.organizer as string | undefined);
+
+        const db = this.firebaseService.getFirestore();
+        const reviewsSnapshot = await db
+          .collection('reviews')
+          .where('tripId', '==', trip.id)
+          .get();
+
+        let totalRating = 0;
+        let reviewCount = 0;
+        reviewsSnapshot.forEach((rDoc) => {
+          const rData = rDoc.data() || {};
+          if (typeof rData.rating === 'number') {
+            totalRating += rData.rating;
+            reviewCount++;
+          }
+        });
+        const tripRating = reviewCount > 0 ? parseFloat((totalRating / reviewCount).toFixed(1)) : null;
+
+        // Calculate organizer rating using cache
+        const organizerId = trip.organizer;
+        let organizerRating: number | null = null;
+        if (organizerId) {
+          if (organizerRatingCache.has(organizerId)) {
+            organizerRating = organizerRatingCache.get(organizerId)!;
+          } else {
+            organizerRating = await this.getOrganizerOverallRating(organizerId);
+            organizerRatingCache.set(organizerId, organizerRating);
+          }
+        }
 
         return {
           id: trip.id as string,
@@ -704,12 +735,55 @@ export class TripsService {
           maxParticipants: trip.maxParticipants ?? 0,
           bookedCount,
           organizerName: organizerName,
-          rating: (trip as any).rating,
+          organizer: trip.organizer,
+          rating: tripRating,
+          organizerRating,
           status: trip.status,
         } as TripCardDto;
       }),
     );
 
     return results;
+  }
+
+  async getOrganizerOverallRating(organizerId: string): Promise<number | null> {
+    const db = this.firebaseService.getFirestore();
+    const tripsSnapshot = await db
+      .collection(this.collectionName)
+      .where('organizer', '==', organizerId)
+      .get();
+
+    const tripIds: string[] = [];
+    tripsSnapshot.forEach((doc) => {
+      const data = doc.data() || {};
+      if (data.tripCategory !== 'Private trip') {
+        tripIds.push(doc.id);
+      }
+    });
+
+    if (tripIds.length === 0) {
+      return null;
+    }
+
+    let totalRating = 0;
+    let reviewCount = 0;
+
+    const reviewSnapshots = await Promise.all(
+      tripIds.map(async (tripId) => {
+        return db.collection('reviews').where('tripId', '==', tripId).get();
+      }),
+    );
+
+    reviewSnapshots.forEach((snapshot) => {
+      snapshot.forEach((rDoc) => {
+        const rData = rDoc.data() || {};
+        if (typeof rData.rating === 'number') {
+          totalRating += rData.rating;
+          reviewCount++;
+        }
+      });
+    });
+
+    return reviewCount > 0 ? parseFloat((totalRating / reviewCount).toFixed(1)) : null;
   }
 }
