@@ -7,7 +7,9 @@ import {
   IsOptional,
   IsString,
   Min,
+  IsEnum,
 } from 'class-validator';
+import { TripPaymentMethod } from './trip-payment-method.enum';
 
 export class Participant {
   @ApiProperty({
@@ -77,4 +79,13 @@ export class Participant {
   @IsOptional()
   @IsString()
   email?: string;
+
+  @ApiProperty({
+    description: 'Selected payment method for this participant booking',
+    enum: TripPaymentMethod,
+    required: false,
+  })
+  @IsOptional()
+  @IsEnum(TripPaymentMethod)
+  paymentMethod?: TripPaymentMethod;
 }

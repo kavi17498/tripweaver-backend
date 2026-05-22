@@ -6,13 +6,38 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
+import { TripsService } from '../trips/trips.service';
+import { Participant } from '../trips/entities/participant.entity';
+import { TripPaymentMethod } from '../trips/entities/trip-payment-method.enum';
 import { CreatePaymentDto } from './dto/create-payment.dto';
+import { OrganizerEarningsSummaryEntity, TripEarningsBreakdownEntity } from './entities/organizer-earnings.entity';
 
 @Injectable()
 export class PaymentsService {
 	private readonly logger = new Logger(PaymentsService.name);
 
-	constructor(private readonly configService: ConfigService) {}
+	constructor(
+		private readonly configService: ConfigService,
+		private readonly tripsService: TripsService,
+	) {}
+
+	private classifyParticipantPaymentMethod(
+		participant: Participant,
+		tripPaymentMethods?: TripPaymentMethod[],
+	): TripPaymentMethod | 'uncategorized' {
+		if (
+			participant.paymentMethod === TripPaymentMethod.PAY_ONLINE ||
+			participant.paymentMethod === TripPaymentMethod.PAY_TO_GUIDE_ON_TRIP_DAY
+		) {
+			return participant.paymentMethod;
+		}
+
+		if ((tripPaymentMethods ?? []).length === 1) {
+			return tripPaymentMethods![0];
+		}
+
+		return 'uncategorized';
+	}
 
 	private toBoolean(value: string | undefined, defaultValue = true): boolean {
 		if (value === undefined) return defaultValue;
@@ -126,5 +151,81 @@ export class PaymentsService {
 		this.logger.log(`PayHere payment object: ${JSON.stringify(paymentObject)}`);
 
 		return paymentObject;
+	}
+
+	async getOrganizerEarnings(organizerId: string): Promise<OrganizerEarningsSummaryEntity> {
+		const trips = await this.tripsService.findByOrganizer(organizerId);
+
+		const tripBreakdowns: TripEarningsBreakdownEntity[] = trips.map((trip) => {
+			const participants = Array.isArray((trip as any).participants)
+				? ((trip as any).participants as Participant[])
+				: [];
+			const pricePerParticipant = Number((trip as any).price ?? 0);
+
+			let onlineParticipantCount = 0;
+			let payToGuideParticipantCount = 0;
+			let uncategorizedParticipantCount = 0;
+
+			for (const participant of participants) {
+				const method = this.classifyParticipantPaymentMethod(
+					participant,
+					(trip as any).paymentMethods as TripPaymentMethod[] | undefined,
+				);
+
+				if (method === TripPaymentMethod.PAY_ONLINE) {
+					onlineParticipantCount += 1;
+					continue;
+				}
+
+				if (method === TripPaymentMethod.PAY_TO_GUIDE_ON_TRIP_DAY) {
+					payToGuideParticipantCount += 1;
+					continue;
+				}
+
+				uncategorizedParticipantCount += 1;
+			}
+
+			const onlineEarned = onlineParticipantCount * pricePerParticipant;
+			const payToGuideEarned = payToGuideParticipantCount * pricePerParticipant;
+			const uncategorizedEarned = uncategorizedParticipantCount * pricePerParticipant;
+			const totalEarned = onlineEarned + payToGuideEarned + uncategorizedEarned;
+
+			return {
+				tripId: String((trip as any).id ?? ''),
+				tripName: String((trip as any).tripName ?? 'Untitled trip'),
+				startDate: String((trip as any).startDate ?? ''),
+				endDate: String((trip as any).endDate ?? ''),
+				status: String((trip as any).status ?? 'draft'),
+				participantCount: participants.length,
+				onlineParticipantCount,
+				payToGuideParticipantCount,
+				totalEarned,
+				onlineEarned,
+				payToGuideEarned,
+				uncategorizedEarned,
+			};
+		});
+
+		const totalEarned = tripBreakdowns.reduce((sum, trip) => sum + trip.totalEarned, 0);
+		const onlineEarned = tripBreakdowns.reduce((sum, trip) => sum + trip.onlineEarned, 0);
+		const payToGuideEarned = tripBreakdowns.reduce((sum, trip) => sum + trip.payToGuideEarned, 0);
+		const uncategorizedEarned = tripBreakdowns.reduce((sum, trip) => sum + trip.uncategorizedEarned, 0);
+
+		tripBreakdowns.sort((left, right) => {
+			if (left.totalEarned !== right.totalEarned) {
+				return right.totalEarned - left.totalEarned;
+			}
+
+			return right.startDate.localeCompare(left.startDate);
+		});
+
+		return {
+			totalEarned,
+			onlineEarned,
+			payToGuideEarned,
+			uncategorizedEarned,
+			tripsCount: tripBreakdowns.length,
+			trips: tripBreakdowns,
+		};
 	}
 }

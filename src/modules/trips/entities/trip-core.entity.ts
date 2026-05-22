@@ -16,11 +16,7 @@ import { Destination } from './destination.entity';
 import { Included } from './included.entity';
 import { Itinerary } from './itinerary.entity';
 import { Participant } from './participant.entity';
-
-export enum TripPaymentMethod {
-  PAY_ONLINE = 'Pay Online',
-  PAY_TO_GUIDE_ON_TRIP_DAY = 'Pay to Guide on Trip Day',
-}
+import { TripPaymentMethod } from './trip-payment-method.enum';
 
 export class MainDestination {
   @ApiProperty({ description: 'Main destination name', example: 'Galle Fort' })

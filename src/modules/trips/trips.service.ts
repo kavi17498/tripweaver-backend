@@ -13,7 +13,7 @@ import { CreateTripDto } from './dto/create-trip.dto';
 import { UpdateParticipantDto } from './dto/update-participant.dto';
 import { UpdateTripDto } from './dto/update-trip.dto';
 import { TripStatus } from './entities/trip-status.enum';
-import { TripPaymentMethod } from './entities/trip-core.entity';
+import { TripPaymentMethod } from './entities/trip-payment-method.enum';
 import { Participant } from './entities/participant.entity';
 import { TripCategory } from './entities/trip-category.enum';
 import { ApprovedPublicTripsQueryDto } from './dto/approved-public-trips-query.dto';
@@ -434,6 +434,7 @@ export class TripsService {
       name: participant.name,
       gender: participant.gender,
       age: participant.age,
+      paymentMethod: selectedPaymentMethod as TripPaymentMethod,
       ...(participant.address !== undefined ? { address: participant.address } : {}),
       ...(participant.phone !== undefined ? { phone: participant.phone } : {}),
       ...(participant.email !== undefined ? { email: participant.email } : {}),
