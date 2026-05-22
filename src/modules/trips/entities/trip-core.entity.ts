@@ -102,6 +102,16 @@ export class TripCore {
   startTime!: string;
 
   @ApiProperty({
+    description: 'End time (HH:mm format, 24-hour)',
+    example: '18:00',
+    type: String,
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  endTime?: string;
+
+  @ApiProperty({
     description: 'Start location/address',
     example: 'Colombo International Airport',
   })

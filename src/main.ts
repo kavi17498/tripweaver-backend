@@ -49,6 +49,7 @@ async function bootstrap() {
     )
     .addTag('users', 'User Management - Register, login, and manage user profiles')
     .addTag('trips', 'Trip Management - Create and manage travel experiences')
+    .addTag('reviews', 'Trip Reviews - Participant reviews and post-trip reminders')
     .addTag('itinerary', 'Itinerary Generation - Build day-by-day plans')
     .addSecurityRequirements('firebase-token')
     .build();

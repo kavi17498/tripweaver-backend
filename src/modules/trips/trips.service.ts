@@ -30,10 +30,20 @@ export class TripsService {
   // small cache for organizerName lookups to avoid repeated DB calls
   private organizerNameCache = new Map<string, string>();
 
-  private isTripExpired(endDate?: string): boolean {
+  private normalizeEndTime(endTime?: string): string {
+    if (!endTime) return '23:59:59.999';
+
+    const trimmedEndTime = endTime.trim();
+    if (/^\d{2}:\d{2}$/.test(trimmedEndTime)) return `${trimmedEndTime}:59.999`;
+    if (/^\d{2}:\d{2}:\d{2}$/.test(trimmedEndTime)) return `${trimmedEndTime}.999`;
+
+    return trimmedEndTime;
+  }
+
+  private isTripExpired(endDate?: string, endTime?: string): boolean {
     if (!endDate) return true;
 
-    const tripEnd = new Date(`${endDate}T23:59:59.999`);
+    const tripEnd = new Date(`${endDate}T${this.normalizeEndTime(endTime)}`);
     if (Number.isNaN(tripEnd.getTime())) return true;
 
     return new Date() > tripEnd;
@@ -405,7 +415,7 @@ export class TripsService {
       throw new BadRequestException('This trip is not available for booking.');
     }
 
-    if (this.isTripExpired(trip.endDate)) {
+    if (this.isTripExpired(trip.endDate, trip.endTime)) {
       throw new BadRequestException('This trip has expired.');
     }
 
