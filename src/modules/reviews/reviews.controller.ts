@@ -2,6 +2,7 @@ import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Req, Unauthor
 import { ApiBody, ApiOkResponse, ApiOperation, ApiParam, ApiSecurity, ApiTags } from '@nestjs/swagger';
 import { Request } from 'express';
 import { CreateReviewDto } from './dto/create-review.dto';
+import { OrganizedTripReviewSummaryEntity } from './entities/organized-trip-review-summary.entity';
 import { ReviewEntity } from './entities/review.entity';
 import { TripReviewSummaryEntity } from './entities/trip-review-summary.entity';
 import { ReviewsService } from './reviews.service';
@@ -38,6 +39,18 @@ export class ReviewsController {
   async getMine(@Req() request: AuthenticatedRequest): Promise<TripReviewSummaryEntity[]> {
     const userId = this.getUserId(request);
     return this.reviewsService.findParticipantReviewSummaries(userId);
+  }
+
+  @Get('organized')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Get review summaries for trips organized by the current user',
+    description: 'Returns all trips organized by the authenticated user, including expired trips and their reviews.',
+  })
+  @ApiOkResponse({ type: [OrganizedTripReviewSummaryEntity] })
+  async getOrganized(@Req() request: AuthenticatedRequest): Promise<OrganizedTripReviewSummaryEntity[]> {
+    const userId = this.getUserId(request);
+    return this.reviewsService.findOrganizedTripReviewSummaries(userId);
   }
 
   @Get('trip/:tripId')

@@ -5,6 +5,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { TripsService } from '../trips/trips.service';
 import { UsersService } from '../users/users.service';
 import { CreateReviewDto } from './dto/create-review.dto';
+import { OrganizedTripReviewSummaryEntity } from './entities/organized-trip-review-summary.entity';
 import { ReviewEntity } from './entities/review.entity';
 import { TripReviewSummaryEntity } from './entities/trip-review-summary.entity';
 import { Trip } from '../trips/entities/trip.entity';
@@ -241,6 +242,34 @@ export class ReviewsService implements OnModuleInit {
   async findByTripId(tripId: string): Promise<ReviewEntity[]> {
     const reviews = await this.loadTripReviews(tripId);
     return reviews;
+  }
+
+  async findOrganizedTripReviewSummaries(userId: string): Promise<OrganizedTripReviewSummaryEntity[]> {
+    const trips = await this.tripsService.findByOrganizer(userId);
+
+    const summaries = await Promise.all(
+      trips.map(async (trip) => {
+        const reviews = await this.loadTripReviews(trip.id ?? '');
+
+        return {
+          trip,
+          participantCount: Array.isArray(trip.participants) ? trip.participants.length : 0,
+          reviewCount: reviews.length,
+          reviews,
+        } satisfies OrganizedTripReviewSummaryEntity;
+      }),
+    );
+
+    return summaries.sort((left, right) => {
+      const leftEnd = new Date(`${left.trip.endDate}T${this.normalizeEndTime(left.trip.endTime)}`).getTime();
+      const rightEnd = new Date(`${right.trip.endDate}T${this.normalizeEndTime(right.trip.endTime)}`).getTime();
+
+      if (!Number.isNaN(leftEnd) && !Number.isNaN(rightEnd) && leftEnd !== rightEnd) {
+        return rightEnd - leftEnd;
+      }
+
+      return right.trip.startDate.localeCompare(left.trip.startDate);
+    });
   }
 
   async findParticipantReviewSummaries(userId: string): Promise<TripReviewSummaryEntity[]> {
