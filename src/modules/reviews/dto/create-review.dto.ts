@@ -13,10 +13,10 @@ export class CreateReviewDto {
   @Max(5)
   rating!: number;
 
-  @ApiProperty({ description: 'Review comment', example: 'The trip was well organized and memorable.' })
+  @ApiPropertyOptional({ description: 'Review comment', example: 'The trip was well organized and memorable.' })
+  @IsOptional()
   @IsString()
-  @MinLength(1)
-  comment!: string;
+  comment?: string;
 
   @ApiPropertyOptional({
     description: 'Optional display name fallback for the reviewer',

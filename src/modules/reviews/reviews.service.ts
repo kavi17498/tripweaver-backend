@@ -312,10 +312,7 @@ export class ReviewsService implements OnModuleInit {
       throw new BadRequestException('Rating must be between 1 and 5.');
     }
 
-    const comment = dto.comment?.trim();
-    if (!comment) {
-      throw new BadRequestException('comment is required');
-    }
+    const comment = dto.comment?.trim() ?? '';
 
     const userName = await this.resolveUserName(userId, dto.userName || participant.name);
     const now = new Date();
