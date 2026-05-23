@@ -175,7 +175,28 @@ export class TripsService {
       throw new NotFoundException(`Trip with ID ${id} not found`);
     }
 
-    return { id: doc.id, ...doc.data() } as Trip;
+    const trip = { id: doc.id, ...doc.data() } as Trip & { organizerProfile?: any };
+
+    // Attempt to attach public organizer profile for client convenience
+    try {
+      if (trip.organizer) {
+        const profile = await this.usersService.getOrganizerPublicProfile(String(trip.organizer));
+        if (profile && profile.organizer) {
+          (trip as any).organizerProfile = profile.organizer;
+          // Attach aggregate stats if available
+          if (profile.overallRating !== undefined) {
+            (trip as any).organizerProfile.overallRating = profile.overallRating;
+          }
+          if (profile.totalReviews !== undefined) {
+            (trip as any).organizerProfile.totalReviews = profile.totalReviews;
+          }
+        }
+      }
+    } catch (err) {
+      // non-fatal - if users service fails, return trip without profile
+    }
+
+    return trip as Trip;
   }
 
   /**
