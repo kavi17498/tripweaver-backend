@@ -596,7 +596,23 @@ export class TripsService {
         });
 
         await this.chatGroupsService.addMembers(chatGroup.id!, bookingMemberIds);
+
+        // Send welcome message(s) from the chat admin (trip organizer)
+        const adminName = await this.resolveOrganizerName(trip.organizer);
+        for (const userId of bookingMemberIds) {
+          try {
+            const memberName = await this.resolveUserDisplayName(userId);
+            await this.chatMessagesService.create(chatGroup.id!, {
+              senderId: trip.organizer,
+              senderName: adminName,
+              message: `Hello, welcome ${memberName} to the chat group!`,
+            });
+          } catch (msgErr) {
+            console.error('Failed to send welcome message for user:', userId, msgErr);
+          }
+        }
       }
+
 
       // Handle category-specific reservation
       const category = trip.tripCategory;
