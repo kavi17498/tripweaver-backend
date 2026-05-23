@@ -34,7 +34,9 @@ import { UpdateTripDto } from './dto/update-trip.dto';
 import { Trip } from './entities/trip.entity';
 import { ApprovedPublicTripsQueryDto } from './dto/approved-public-trips-query.dto';
 import { TripCardDto } from './dto/trip-card.dto';
+import { UpdateParticipantsStatusDto } from './dto/update-participants-status.dto';
 import { Public } from '../../auth/public.decorator';
+
 
 type AuthenticatedRequest = Request & {
   user?: {
@@ -381,6 +383,34 @@ export class TripsController {
   }
 
   /**
+   * Update participants status (approve/reject)
+   * PATCH /trips/:id/participants/status
+   */
+  @Patch(':id/participants/status')
+  @ApiOperation({
+    summary: 'Update participants status (approve/reject)',
+    description: 'Update the status of multiple participants on a trip to accepted or rejected.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Unique trip identifier',
+    example: 'trip_12345',
+  })
+  @ApiBody({ type: UpdateParticipantsStatusDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Participants status updated successfully',
+    type: Trip,
+  })
+  @ApiNotFoundResponse({ description: 'Trip not found' })
+  async updateParticipantsStatus(
+    @Param('id') id: string,
+    @Body() dto: UpdateParticipantsStatusDto,
+  ): Promise<Trip> {
+    return this.tripsService.updateParticipantsStatus(id, dto.participantIds, dto.status);
+  }
+
+  /**
    * Update a participant on a trip
    * PATCH /trips/:id/participants/:participantId
    */
@@ -414,6 +444,8 @@ export class TripsController {
   ): Promise<Trip> {
     return this.tripsService.updateParticipant(id, participantId, participant);
   }
+
+
 
   /**
    * Delete a trip

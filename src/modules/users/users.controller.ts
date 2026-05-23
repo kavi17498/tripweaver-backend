@@ -65,14 +65,15 @@ export class UsersController {
     targetUserId: string,
   ): void {
     const { uid, role } = this.getRequesterIdentity(request);
-    const isAdmin = role === 'admin' || role === 'superadmin';
+    const isAdmin = role === 'admin' || role === 'superadmin' || role === 'guide';
 
     if (!isAdmin && uid !== targetUserId) {
       throw new ForbiddenException(
-        'You can only access your own user data unless you are admin or superadmin',
+        'You can only access your own user data unless you are admin, superadmin, or guide',
       );
     }
   }
+
 
   private assertAdminOnly(request: AuthenticatedRequest): void {
     const { role } = this.getRequesterIdentity(request);

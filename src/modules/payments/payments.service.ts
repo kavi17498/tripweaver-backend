@@ -158,9 +158,11 @@ export class PaymentsService {
 
 		const tripBreakdowns: TripEarningsBreakdownEntity[] = trips.map((trip) => {
 			const participants = Array.isArray((trip as any).participants)
-				? ((trip as any).participants as Participant[])
+				? (((trip as any).participants as Participant[]).filter((p) => !p.status || p.status === 'accepted'))
 				: [];
 			const pricePerParticipant = Number((trip as any).price ?? 0);
+
+
 
 			let onlineParticipantCount = 0;
 			let payToGuideParticipantCount = 0;

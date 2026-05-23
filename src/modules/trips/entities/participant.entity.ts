@@ -88,4 +88,24 @@ export class Participant {
   @IsOptional()
   @IsEnum(TripPaymentMethod)
   paymentMethod?: TripPaymentMethod;
+
+  @ApiProperty({
+    description: 'Participation status',
+    enum: ['pending', 'accepted', 'rejected'],
+    example: 'pending',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  status?: 'pending' | 'accepted' | 'rejected';
+
+  @ApiProperty({
+    description: 'Grouping identifier for participants booked together',
+    example: 'booking_12345',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  bookingId?: string;
 }
+
