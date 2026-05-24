@@ -210,6 +210,21 @@ export class UsersController {
     return this.usersService.getOrganizerPublicProfile(id);
   }
 
+  @Public()
+  @Get('organizers')
+  @ApiOperation({
+    summary: 'Get all organizers',
+    description: 'Retrieve a list of all verified guides/organizers.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'List of all organizers retrieved successfully',
+    type: [User],
+  })
+  async findAllOrganizers(): Promise<User[]> {
+    return this.usersService.findAllOrganizers();
+  }
+
   /**
    * Get a user by ID
    * GET /users/:id

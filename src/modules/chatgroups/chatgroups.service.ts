@@ -184,6 +184,38 @@ export class ChatGroupsService {
       throw new ForbiddenException('You are not allowed to view this chat context');
     }
 
+    if (tripId.startsWith('dm-')) {
+      const otherMemberId = (chatGroup.members ?? []).find(m => m !== requesterId) || chatGroup.adminId;
+      const otherUser = await this.usersService.findOne(otherMemberId);
+
+      const mockTrip: any = {
+        id: tripId,
+        tripName: 'Direct Message',
+        tripCategory: 'Private trip',
+        startDate: '',
+        endDate: '',
+        startTime: '',
+        startLocation: '',
+        organizer: otherMemberId,
+        price: 0,
+        destinations: [],
+        mainDestinations: [],
+        itinerary: { days: [] },
+        included: { inclusions: [], exclusions: [] },
+        paymentMethods: [],
+        participants: [],
+        description: 'Private 1-on-1 direct conversation.',
+        status: 'accepted'
+      };
+
+      return {
+        chatGroup,
+        trip: mockTrip,
+        organizer: otherUser,
+        participants: []
+      };
+    }
+
     const trip = await this.tripsService.findOne(tripId);
     const organizer = await this.usersService.findOne(trip.organizer);
     const participants = await Promise.all(

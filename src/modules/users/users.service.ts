@@ -494,4 +494,34 @@ export class UsersService {
       totalReviews: allReviews.length,
     };
   }
+
+  /**
+   * Get all organizers (verified guides)
+   */
+  async findAllOrganizers(): Promise<User[]> {
+    const db = this.firebaseService.getFirestore();
+    const snapshot = await db
+      .collection(this.collectionName)
+      .where('isVerified', '==', true)
+      .get();
+
+    const users: User[] = [];
+    const auth = this.firebaseService.getAuth();
+
+    for (const doc of snapshot.docs) {
+      const userData = doc.data();
+      const userId = doc.id;
+      try {
+        const authUser = await auth.getUser(userId);
+        const role = authUser.customClaims?.role;
+        if (role === 'guide' || role === 'admin' || role === 'superadmin') {
+          users.push({ id: userId, ...userData } as User);
+        }
+      } catch (err) {
+        users.push({ id: userId, ...userData } as User);
+      }
+    }
+
+    return users;
+  }
 }
