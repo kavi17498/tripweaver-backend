@@ -226,15 +226,27 @@ export class TripCore {
 
   @ApiProperty({
     description: 'Pickup type',
-    enum: ['Free Pickup', 'Pickup Available', 'Meet at Location'],
+    enum: [
+      'Free Pickup',
+      'Pickup Available',
+      'Free Pickup from Bandaranaike International Airport',
+      'Free Pickup from Mattala Airport',
+      'Meet at Location',
+    ],
     example: 'Meet at Location',
   })
   @IsNotEmpty()
   @IsString()
-  pickupType!: 'Free Pickup' | 'Pickup Available' | 'Meet at Location';
+  pickupType!:
+    | 'Free Pickup'
+    | 'Pickup Available'
+    | 'Free Pickup from Bandaranaike International Airport'
+    | 'Free Pickup from Mattala Airport'
+    | 'Meet at Location';
 
   @ApiProperty({
-    description: 'Pickup cost per km (required if pickupType is Pickup Available)',
+    description:
+      'Pickup cost per km (required if pickupType is Pickup Available or an airport pickup option)',
     example: 50,
     required: false,
   })
@@ -243,7 +255,8 @@ export class TripCore {
   pickupCostPerKm?: number;
 
   @ApiProperty({
-    description: 'Pickup start location (required if pickupType is Free Pickup or Pickup Available)',
+    description:
+      'Pickup start location (required if pickupType is Free Pickup, Pickup Available, or an airport pickup option)',
     type: () => PickupStartLocation,
     required: false,
   })
@@ -251,4 +264,4 @@ export class TripCore {
   @ValidateNested()
   @Type(() => PickupStartLocation)
   pickupStartLocation?: PickupStartLocation;
-}
+}
