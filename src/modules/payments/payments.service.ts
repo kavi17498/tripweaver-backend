@@ -167,30 +167,43 @@ export class PaymentsService {
 			let onlineParticipantCount = 0;
 			let payToGuideParticipantCount = 0;
 			let uncategorizedParticipantCount = 0;
+			let onlinePickupEarned = 0;
+			let payToGuidePickupEarned = 0;
+			let uncategorizedPickupEarned = 0;
 
 			for (const participant of participants) {
 				const method = this.classifyParticipantPaymentMethod(
 					participant,
 					(trip as any).paymentMethods as TripPaymentMethod[] | undefined,
 				);
+				const pPickupCost = Number(participant.pickupCost ?? 0);
 
 				if (method === TripPaymentMethod.PAY_ONLINE) {
 					onlineParticipantCount += 1;
+					onlinePickupEarned += pPickupCost;
 					continue;
 				}
 
 				if (method === TripPaymentMethod.PAY_TO_GUIDE_ON_TRIP_DAY) {
 					payToGuideParticipantCount += 1;
+					payToGuidePickupEarned += pPickupCost;
 					continue;
 				}
 
 				uncategorizedParticipantCount += 1;
+				uncategorizedPickupEarned += pPickupCost;
 			}
 
-			const onlineEarned = onlineParticipantCount * pricePerParticipant;
-			const payToGuideEarned = payToGuideParticipantCount * pricePerParticipant;
-			const uncategorizedEarned = uncategorizedParticipantCount * pricePerParticipant;
+			const onlineBaseEarned = onlineParticipantCount * pricePerParticipant;
+			const payToGuideBaseEarned = payToGuideParticipantCount * pricePerParticipant;
+			const uncategorizedBaseEarned = uncategorizedParticipantCount * pricePerParticipant;
+
+			const onlineEarned = onlineBaseEarned + onlinePickupEarned;
+			const payToGuideEarned = payToGuideBaseEarned + payToGuidePickupEarned;
+			const uncategorizedEarned = uncategorizedBaseEarned + uncategorizedPickupEarned;
 			const totalEarned = onlineEarned + payToGuideEarned + uncategorizedEarned;
+			const pickupEarned = onlinePickupEarned + payToGuidePickupEarned + uncategorizedPickupEarned;
+			const baseTripEarned = totalEarned - pickupEarned;
 
 			return {
 				tripId: String((trip as any).id ?? ''),
@@ -205,6 +218,8 @@ export class PaymentsService {
 				onlineEarned,
 				payToGuideEarned,
 				uncategorizedEarned,
+				pickupEarned,
+				baseTripEarned,
 			};
 		});
 
@@ -212,6 +227,8 @@ export class PaymentsService {
 		const onlineEarned = tripBreakdowns.reduce((sum, trip) => sum + trip.onlineEarned, 0);
 		const payToGuideEarned = tripBreakdowns.reduce((sum, trip) => sum + trip.payToGuideEarned, 0);
 		const uncategorizedEarned = tripBreakdowns.reduce((sum, trip) => sum + trip.uncategorizedEarned, 0);
+		const totalPickupEarned = tripBreakdowns.reduce((sum, trip) => sum + trip.pickupEarned, 0);
+		const totalBaseTripEarned = tripBreakdowns.reduce((sum, trip) => sum + trip.baseTripEarned, 0);
 
 		tripBreakdowns.sort((left, right) => {
 			if (left.totalEarned !== right.totalEarned) {
@@ -226,6 +243,8 @@ export class PaymentsService {
 			onlineEarned,
 			payToGuideEarned,
 			uncategorizedEarned,
+			totalPickupEarned,
+			totalBaseTripEarned,
 			tripsCount: tripBreakdowns.length,
 			trips: tripBreakdowns,
 		};

@@ -35,6 +35,23 @@ export class MainDestination {
   lng!: number;
 }
 
+export class PickupStartLocation {
+  @ApiProperty({ description: 'Pickup start location name', example: 'Colombo Airport' })
+  @IsNotEmpty()
+  @IsString()
+  name!: string;
+
+  @ApiProperty({ description: 'Latitude', example: 6.9271 })
+  @IsNotEmpty()
+  @IsNumber()
+  lat!: number;
+
+  @ApiProperty({ description: 'Longitude', example: 79.8612 })
+  @IsNotEmpty()
+  @IsNumber()
+  lng!: number;
+}
+
 export class TripCore {
   @ApiProperty({ description: 'Trip name', example: 'Sri Lanka Adventure' })
   @IsNotEmpty()
@@ -206,4 +223,32 @@ export class TripCore {
   @IsOptional()
   @IsNumber()
   maxParticipants?: number;
-}
+
+  @ApiProperty({
+    description: 'Pickup type',
+    enum: ['Free Pickup', 'Pickup Available', 'Meet at Location'],
+    example: 'Meet at Location',
+  })
+  @IsNotEmpty()
+  @IsString()
+  pickupType!: 'Free Pickup' | 'Pickup Available' | 'Meet at Location';
+
+  @ApiProperty({
+    description: 'Pickup cost per km (required if pickupType is Pickup Available)',
+    example: 50,
+    required: false,
+  })
+  @IsOptional()
+  @IsNumber()
+  pickupCostPerKm?: number;
+
+  @ApiProperty({
+    description: 'Pickup start location (required if pickupType is Free Pickup or Pickup Available)',
+    type: () => PickupStartLocation,
+    required: false,
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => PickupStartLocation)
+  pickupStartLocation?: PickupStartLocation;
+}

@@ -36,6 +36,12 @@ export class TripEarningsBreakdownEntity {
 
   @ApiProperty({ example: 0 })
   uncategorizedEarned!: number;
+
+  @ApiProperty({ example: 5000 })
+  pickupEarned!: number;
+
+  @ApiProperty({ example: 235000 })
+  baseTripEarned!: number;
 }
 
 export class OrganizerEarningsSummaryEntity {
@@ -51,8 +57,15 @@ export class OrganizerEarningsSummaryEntity {
   @ApiProperty({ example: 0 })
   uncategorizedEarned!: number;
 
+  @ApiProperty({ example: 15000 })
+  totalPickupEarned!: number;
+
+  @ApiProperty({ example: 505000 })
+  totalBaseTripEarned!: number;
+
   @ApiProperty({ example: 3 })
   tripsCount!: number;
+
 
   @ApiProperty({ type: [TripEarningsBreakdownEntity] })
   trips!: TripEarningsBreakdownEntity[];
