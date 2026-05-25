@@ -44,7 +44,7 @@ export class TripCore {
   @ApiProperty({
     description: 'Trip category',
     enum: TripCategory,
-    example: TripCategory.SOLO_TRIP_WITH_GUIDE,
+    example: TripCategory.PUBLIC_TRIP,
   })
   @IsNotEmpty()
   @IsEnum(TripCategory)

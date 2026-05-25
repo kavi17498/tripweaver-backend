@@ -449,6 +449,9 @@ export class TripsService {
       throw new BadRequestException('This trip has been reserved and is no longer bookable.');
     }
 
+    const isPublic = trip.tripCategory === TripCategory.PUBLIC_TRIP;
+    const participantStatus = isPublic ? 'accepted' : 'pending';
+
     const bookingId = randomUUID();
     const newParticipants: Participant[] = request.participants.map((participant) => ({
       participantId: participant.participantId ?? randomUUID(),
@@ -457,7 +460,7 @@ export class TripsService {
       gender: participant.gender,
       age: participant.age,
       paymentMethod: selectedPaymentMethod as TripPaymentMethod,
-      status: 'pending',
+      status: participantStatus,
       bookingId: bookingId,
       ...(participant.address !== undefined ? { address: participant.address } : {}),
       ...(participant.phone !== undefined ? { phone: participant.phone } : {}),
@@ -494,54 +497,81 @@ export class TripsService {
       );
     }
 
-    // Category-specific restrictions: Family and Solo trips can only be booked once (one active booking may contain multiple family members)
-    if (
-      category === TripCategory.FAMILY_TRIP_WITH_GUIDE ||
-      category === TripCategory.SOLO_TRIP_WITH_GUIDE
-    ) {
-      // If there are already active (not rejected) participants, the trip is finished for booking
+    // Public trips can only be booked once (one active booking may contain multiple participants)
+    if (category === TripCategory.PUBLIC_TRIP) {
       if (activeParticipantsCount > 0) {
-        // If any of the new participants match existing active participants by parentUserId or email,
-        // return a user-friendly message indicating they already booked this trip.
-        const alreadyBooked = newParticipants.some((np) => {
-          if (np.parentUserId) {
-            return existingParticipants.some((ep) => ep.parentUserId && ep.parentUserId === np.parentUserId && ep.status !== 'rejected');
-          }
-          if (np.email) {
-            return existingParticipants.some((ep) => ep.email && ep.email === np.email && ep.status !== 'rejected');
-          }
-          return false;
-        });
-
-        if (alreadyBooked) {
-          throw new BadRequestException('You have already booked this trip.');
-        }
-
         throw new BadRequestException('This trip is no longer available for booking.');
       }
     }
 
     trip.participants.push(...newParticipants);
 
-    // If this booking reserves the trip (family or solo), mark reservation metadata - we will handle reservation on acceptance, not request
-
     const updatePayload: any = {
       participants: trip.participants,
       updatedAt: new Date(),
     };
 
+    if (isPublic) {
+      const bookingMemberIds = Array.from(
+        new Set(
+          newParticipants
+            .map((p) => p.parentUserId)
+            .filter((uid): uid is string => Boolean(uid)),
+        ),
+      );
+
+      if (bookingMemberIds.length > 0) {
+        const chatGroup = await this.chatGroupsService.ensureTripChatGroup({
+          tripId,
+          name: trip.tripName,
+          adminId: trip.organizer,
+          adminName: await this.resolveOrganizerName(trip.organizer),
+          description: `Discussion group for ${trip.tripName}`,
+          members: [trip.organizer],
+        });
+
+        await this.chatGroupsService.addMembers(chatGroup.id!, bookingMemberIds);
+
+        // Send welcome message(s) from the chat admin (trip organizer)
+        const adminName = await this.resolveOrganizerName(trip.organizer);
+        for (const userId of bookingMemberIds) {
+          try {
+            const memberName = await this.resolveUserDisplayName(userId);
+            await this.chatMessagesService.create(chatGroup.id!, {
+              senderId: trip.organizer,
+              senderName: adminName,
+              message: `Hello, welcome ${memberName} to the chat group!`,
+            });
+          } catch (msgErr) {
+            console.error('Failed to send welcome message for user:', userId, msgErr);
+          }
+        }
+      }
+    }
+
     await db.collection(this.collectionName).doc(tripId).update(updatePayload);
 
     // Send notification to the organizer/guide
     const bookerName = newParticipants[0]?.name || 'Someone';
-    await this.notificationsService.create({
-      userId: trip.organizer,
-      type: 'join-request',
-      title: 'New Booking Request',
-      description: `${bookerName} requested to participate in your trip "${trip.tripName}".`,
-      tripId,
-      read: false,
-    });
+    if (isPublic) {
+      await this.notificationsService.create({
+        userId: trip.organizer,
+        type: 'account-alert',
+        title: 'Trip Booked',
+        description: `${bookerName} booked and paid for your trip "${trip.tripName}".`,
+        tripId,
+        read: false,
+      });
+    } else {
+      await this.notificationsService.create({
+        userId: trip.organizer,
+        type: 'join-request',
+        title: 'New Booking Request',
+        description: `${bookerName} requested to participate in your trip "${trip.tripName}".`,
+        tripId,
+        read: false,
+      });
+    }
 
     return this.findOne(tripId);
   }
@@ -635,17 +665,6 @@ export class TripsService {
       }
 
 
-      // Handle category-specific reservation
-      const category = trip.tripCategory;
-      if (category === TripCategory.FAMILY_TRIP_WITH_GUIDE) {
-        updatePayload.reservedFor = 'family';
-        updatePayload.reservedByUserId = firstMatched.parentUserId ?? null;
-        updatePayload.reservedAt = new Date();
-      } else if (category === TripCategory.SOLO_TRIP_WITH_GUIDE) {
-        updatePayload.reservedFor = 'solo';
-        updatePayload.reservedByUserId = firstMatched.parentUserId ?? null;
-        updatePayload.reservedAt = new Date();
-      }
 
       // Notify user(s)
       const notifyPromises = bookingMemberIds.map((userId) =>
@@ -771,19 +790,10 @@ export class TripsService {
         return false;
       }
 
-      const bookedCount = (trip.participants || []).length;
-      const reservedFor = (trip as any).reservedFor as string | undefined;
-      const isFamilyOrSolo =
-        trip.tripCategory === TripCategory.FAMILY_TRIP_WITH_GUIDE ||
-        trip.tripCategory === TripCategory.SOLO_TRIP_WITH_GUIDE;
+      const bookedCount = (trip.participants || []).filter((p) => p.status !== 'rejected').length;
 
-      // Family and solo trips disappear from home once they have any booking.
-      if (isFamilyOrSolo && (bookedCount > 0 || reservedFor === 'family' || reservedFor === 'solo')) {
-        return false;
-      }
-
-      // Stranger trips stay public until they are fully booked.
-      if (trip.tripCategory === TripCategory.STRANGERS_TRIP_WITH_GUIDE && trip.maxParticipants && bookedCount >= trip.maxParticipants) {
+      // Public trips disappear from home once they have any booking.
+      if (trip.tripCategory === TripCategory.PUBLIC_TRIP && bookedCount > 0) {
         return false;
       }
 
