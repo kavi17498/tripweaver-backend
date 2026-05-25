@@ -313,6 +313,102 @@ export class TripsService {
     return this.findOne(tripId);
   }
 
+  async cancelTrip(tripId: string, userId: string, reason: string, userRole?: string): Promise<Trip> {
+    const db = this.firebaseService.getFirestore();
+    const docRef = db.collection(this.collectionName).doc(tripId);
+    const doc = await docRef.get();
+
+    if (!doc.exists) {
+      throw new NotFoundException(`Trip with ID ${tripId} not found`);
+    }
+
+    const trip = { id: doc.id, ...doc.data() } as Trip;
+    const normalizedReason = reason.trim();
+
+    if (!normalizedReason) {
+      throw new BadRequestException('Cancellation reason is required.');
+    }
+
+    const isAdmin = userRole === 'admin' || userRole === 'superadmin';
+    const isOrganizer = trip.organizer === userId;
+
+    if (!isOrganizer && !isAdmin) {
+      throw new BadRequestException('Only the organizer or an admin can cancel this trip.');
+    }
+
+    if (trip.status === TripStatus.CANCELLED) {
+      throw new BadRequestException('This trip has already been canceled.');
+    }
+
+    const existingParticipants = Array.isArray(trip.participants) ? trip.participants : [];
+    const notificationRecipientIds = Array.from(
+      new Set(
+        existingParticipants
+          .map((participant) => participant.parentUserId)
+          .filter((participantUserId): participantUserId is string => Boolean(participantUserId)),
+      ),
+    );
+
+    const userName = await this.resolveUserDisplayName(userId);
+    const chatGroup = await this.chatGroupsService.findOneByTripId(tripId);
+    const messageSenderId = chatGroup?.members?.includes(userId) ? userId : trip.organizer;
+    const cancellationMessage = `${userName} canceled the trip: ${normalizedReason}`;
+    const now = new Date();
+
+    await docRef.update({
+      status: TripStatus.CANCELLED,
+      statusReason: normalizedReason,
+      statusUpdatedBy: userId,
+      statusUpdatedByName: userName,
+      statusUpdatedAt: now,
+      updatedAt: now,
+    });
+
+    if (chatGroup) {
+      await this.chatMessagesService.create(chatGroup.id!, {
+        senderId: messageSenderId,
+        senderName: userName,
+        message: cancellationMessage,
+      });
+    }
+
+    await Promise.all(
+      notificationRecipientIds.map((participantUserId) =>
+        this.notificationsService.create({
+          userId: participantUserId,
+          type: 'account-alert',
+          title: 'Trip canceled',
+          description:
+            `The trip "${trip.tripName}" has been canceled. Reason: ${normalizedReason}` +
+            ' If you paid online, the refund will be handled by admin.',
+          tripId,
+          read: false,
+        }),
+      ),
+    );
+
+    const refundReviewAdmins = await this.usersService.findAllOrganizers();
+
+    await Promise.all(
+      refundReviewAdmins
+        .filter((admin) => admin.id && admin.id !== userId)
+        .map((admin) =>
+          this.notificationsService.create({
+            userId: admin.id!,
+            type: 'account-alert',
+            title: 'Refund review required',
+            description:
+              `Trip "${trip.tripName}" was canceled by ${userName}. ` +
+              'Please review any online payments and process refunds if required.',
+            tripId,
+            read: false,
+          }),
+        ),
+    );
+
+    return this.findOne(tripId);
+  }
+
   /**
    * Get trips by category
    */

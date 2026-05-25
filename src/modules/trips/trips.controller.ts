@@ -35,6 +35,7 @@ import { Trip } from './entities/trip.entity';
 import { ApprovedPublicTripsQueryDto } from './dto/approved-public-trips-query.dto';
 import { TripCardDto } from './dto/trip-card.dto';
 import { UpdateParticipantsStatusDto } from './dto/update-participants-status.dto';
+import { CancelTripDto } from './dto/cancel-trip.dto';
 import { Public } from '../../auth/public.decorator';
 
 
@@ -328,6 +329,44 @@ export class TripsController {
   ): Promise<Trip> {
     const userRole = request.user?.role;
     return this.tripsService.update(id, updateTripDto, userRole);
+  }
+
+  /**
+   * Cancel a trip as the organizer or an admin
+   * PATCH /trips/:id/cancel
+   */
+  @Patch(':id/cancel')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Cancel a trip',
+    description:
+      'Cancels a trip with a required reason, updates the trip status, notifies participants, and posts a cancellation message to the trip chat group.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Unique trip identifier',
+    example: 'trip_12345',
+  })
+  @ApiBody({ type: CancelTripDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Trip canceled successfully',
+    type: Trip,
+  })
+  @ApiNotFoundResponse({ description: 'Trip not found' })
+  async cancelTrip(
+    @Param('id') id: string,
+    @Body() cancelTripDto: CancelTripDto,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<Trip> {
+    const uid = request.user?.uid || request.user?.sub;
+    const userRole = request.user?.role;
+
+    if (!uid) {
+      throw new UnauthorizedException('Unable to extract user identity from token');
+    }
+
+    return this.tripsService.cancelTrip(id, uid, cancelTripDto.reason, userRole);
   }
 
   /**
