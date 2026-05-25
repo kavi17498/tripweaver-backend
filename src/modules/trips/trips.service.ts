@@ -475,6 +475,9 @@ export class TripsService {
     const existingParticipants = trip.participants || [];
     for (const np of newParticipants) {
       if (np.parentUserId) {
+        if (np.parentUserId === trip.organizer) {
+          throw new BadRequestException('You cannot book a trip that you organized.');
+        }
         const duplicate = existingParticipants.find((ep) => ep.parentUserId && ep.parentUserId === np.parentUserId && ep.status !== 'rejected');
         if (duplicate) {
           throw new BadRequestException('You have already booked this trip.');
