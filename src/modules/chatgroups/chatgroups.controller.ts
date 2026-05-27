@@ -64,6 +64,27 @@ export class ChatGroupsController {
     return this.chatGroupsService.create(createChatGroupDto);
   }
 
+  @Post('custom-request')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: 'Create a new custom trip request chat group',
+    description: 'Creates a custom trip request chat group, seeds initial messages, and notifies the guide.',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Custom trip request chat group created successfully',
+    type: ChatGroup,
+  })
+  async createCustomRequest(
+    @Body() body: {
+      guideId: string;
+      travelerId: string;
+      travelerName: string;
+    },
+  ): Promise<ChatGroup> {
+    return this.chatGroupsService.createCustomRequest(body);
+  }
+
   /**
    * Get all chat groups
    * GET /chatgroups

@@ -184,13 +184,13 @@ export class ChatGroupsService {
       throw new ForbiddenException('You are not allowed to view this chat context');
     }
 
-    if (tripId.startsWith('dm-')) {
+    if (tripId.startsWith('dm-') || tripId.startsWith('custom-')) {
       const otherMemberId = (chatGroup.members ?? []).find(m => m !== requesterId) || chatGroup.adminId;
       const otherUser = await this.usersService.findOne(otherMemberId);
 
       const mockTrip: any = {
         id: tripId,
-        tripName: 'Direct Message',
+        tripName: tripId.startsWith('custom-') ? 'Custom Trip Request' : 'Direct Message',
         tripCategory: 'Private trip',
         startDate: '',
         endDate: '',
@@ -204,7 +204,7 @@ export class ChatGroupsService {
         included: { inclusions: [], exclusions: [] },
         paymentMethods: [],
         participants: [],
-        description: 'Private 1-on-1 direct conversation.',
+        description: tripId.startsWith('custom-') ? 'Custom trip coordination.' : 'Private 1-on-1 direct conversation.',
         status: 'accepted'
       };
 
@@ -356,5 +356,93 @@ export class ChatGroupsService {
     });
 
     return this.findOne(chatGroupId);
+  }
+
+  async createCustomRequest(body: {
+    guideId: string;
+    travelerId: string;
+    travelerName: string;
+  }): Promise<ChatGroup> {
+    const db = this.firebaseService.getFirestore();
+    const now = new Date();
+
+    const tripId = `custom-${body.travelerId}-${body.guideId}-${Date.now()}`;
+    const chatGroupName = `Custom Trip Request From ${body.travelerName}`;
+
+    // Get guide name
+    let guideName = 'Guide';
+    try {
+      const guideUser = await this.usersService.findOne(body.guideId);
+      guideName = `${guideUser.firstName || ''} ${guideUser.lastName || ''}`.trim() || 'Guide';
+    } catch {
+      // ignore
+    }
+
+    const newChatGroup: ChatGroup = {
+      tripId: tripId,
+      name: chatGroupName,
+      adminId: body.guideId,
+      adminName: guideName,
+      description: `Custom trip request group from ${body.travelerName}`,
+      members: [body.travelerId, body.guideId],
+      lastMessage: 'have a chat and organizor and planned your trip he will send u a private trip link for customzied trip',
+      lastMessageAt: now,
+      unreadCounts: {
+        [body.guideId]: 1
+      },
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    const docRef = await db.collection(this.collectionName).add(newChatGroup);
+    const id = docRef.id;
+
+    // Seed system message in chatmessages
+    const systemMessage = {
+      chatGroupId: id,
+      tripId: tripId,
+      senderId: 'system',
+      senderName: 'System',
+      message: 'have a chat and organizor and planned your trip he will send u a private trip link for customzied trip',
+      createdAt: now,
+      updatedAt: now,
+    };
+    await db.collection('chatmessages').add(systemMessage);
+
+    // Seed traveler message in chatmessages
+    const travelerMessage = {
+      chatGroupId: id,
+      tripId: tripId,
+      senderId: body.travelerId,
+      senderName: body.travelerName,
+      message: `Hi! I would like to request a custom trip. Let's discuss and plan the details here.`,
+      createdAt: new Date(now.getTime() + 1000),
+      updatedAt: new Date(now.getTime() + 1000),
+    };
+    await db.collection('chatmessages').add(travelerMessage);
+
+    // Update group summary with traveler message
+    await db.collection(this.collectionName).doc(id).update({
+      lastMessage: travelerMessage.message,
+      lastMessageAt: travelerMessage.createdAt,
+      lastMessageSenderId: body.travelerId,
+      unreadCounts: {
+        [body.guideId]: 2
+      }
+    });
+
+    // Create notification for guide
+    await db.collection('notifications').add({
+      userId: body.guideId,
+      type: 'account-alert',
+      title: 'New Custom Trip Request',
+      description: `${body.travelerName} sent you a custom trip request.`,
+      tripId: tripId,
+      read: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    return { ...newChatGroup, id };
   }
 }
