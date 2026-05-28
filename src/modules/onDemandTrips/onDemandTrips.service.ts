@@ -33,6 +33,16 @@ export class OnDemandTripsService {
     }
   }
 
+  private async resolveOrganizerRating(organizerId?: string): Promise<number | null> {
+    if (!organizerId) return null;
+
+    try {
+      return await this.tripsService.getOrganizerOverallRating(organizerId);
+    } catch {
+      return null;
+    }
+  }
+
   private canCreate(role?: AuthRole) {
     return role === 'guide' || role === 'admin' || role === 'superadmin';
   }
@@ -87,7 +97,10 @@ export class OnDemandTripsService {
     };
 
     const docRef = await db.collection(this.collectionName).add(template);
-    return this.normalizeTemplate(template as Record<string, any>, docRef.id);
+    const result = this.normalizeTemplate(template as Record<string, any>, docRef.id);
+    result.organizerName = await this.resolveOrganizerName(result.organizer);
+    result.organizerRating = await this.resolveOrganizerRating(result.organizer);
+    return result;
   }
 
   async findOne(id: string): Promise<OnDemandTripTemplate> {
@@ -97,14 +110,22 @@ export class OnDemandTripsService {
       throw new NotFoundException(`On-demand trip template with ID ${id} not found`);
     }
 
-    return this.normalizeTemplate(doc.data() || {}, doc.id);
+    const result = this.normalizeTemplate(doc.data() || {}, doc.id);
+    result.organizerName = await this.resolveOrganizerName(result.organizer);
+    result.organizerRating = await this.resolveOrganizerRating(result.organizer);
+    return result;
   }
 
   async findByOrganizer(organizerId: string): Promise<OnDemandTripTemplate[]> {
     const db = this.firebaseService.getFirestore();
     const snapshot = await db.collection(this.collectionName).where('organizer', '==', organizerId).get();
     const templates: OnDemandTripTemplate[] = [];
-    snapshot.forEach((doc) => templates.push(this.normalizeTemplate(doc.data() || {}, doc.id)));
+    for (const doc of snapshot.docs) {
+      const template = this.normalizeTemplate(doc.data() || {}, doc.id);
+      template.organizerName = await this.resolveOrganizerName(template.organizer);
+      template.organizerRating = await this.resolveOrganizerRating(template.organizer);
+      templates.push(template);
+    }
     return templates;
   }
 
@@ -117,7 +138,12 @@ export class OnDemandTripsService {
 
     const snapshot = await query.get();
     const templates: OnDemandTripTemplate[] = [];
-    snapshot.forEach((doc) => templates.push(this.normalizeTemplate(doc.data() || {}, doc.id)));
+    for (const doc of snapshot.docs) {
+      const template = this.normalizeTemplate(doc.data() || {}, doc.id);
+      template.organizerName = await this.resolveOrganizerName(template.organizer);
+      template.organizerRating = await this.resolveOrganizerRating(template.organizer);
+      templates.push(template);
+    }
     return templates;
   }
 
@@ -134,6 +160,8 @@ export class OnDemandTripsService {
       coverImage: dto.coverImage ?? (dto.photos && dto.photos.length > 0 ? dto.photos[0] : current.coverImage),
       updatedAt: new Date(),
     };
+    delete (nextData as any).organizerName;
+    delete (nextData as any).organizerRating;
 
     await db.collection(this.collectionName).doc(id).update(nextData);
     return this.findOne(id);

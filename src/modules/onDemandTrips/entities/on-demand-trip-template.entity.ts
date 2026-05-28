@@ -23,6 +23,12 @@ export class OnDemandTripTemplate {
   @ApiProperty({ description: 'Organizer user ID' })
   organizer!: string;
 
+  @ApiProperty({ description: 'Organizer name', required: false })
+  organizerName?: string;
+
+  @ApiProperty({ description: 'Organizer rating', required: false, type: Number })
+  organizerRating?: number | null;
+
   @ApiProperty({ description: 'Trip price per person', example: 1200 })
   price!: number;
 
