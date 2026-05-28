@@ -410,6 +410,10 @@ export class UsersService {
       country: userData.country || '',
       isVerified: userData.isVerified || false,
       createdAt: this.toDate(userData.createdAt),
+      languagesSpoken: userData.languagesSpoken || [],
+      socialLinks: userData.socialLinks || {},
+      tripPhotos: userData.tripPhotos || [],
+      coverImage: userData.coverImage || '',
     };
 
     // 2. Fetch the trips organized by this user

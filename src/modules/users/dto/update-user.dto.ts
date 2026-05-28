@@ -1,4 +1,4 @@
-import { IsEmail, IsOptional, IsString, IsBoolean } from 'class-validator';
+import { IsEmail, IsOptional, IsString, IsBoolean, IsArray, IsObject } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UpdateUserDto {
@@ -80,4 +80,45 @@ export class UpdateUserDto {
   @IsOptional()
   @IsBoolean()
   isVerified?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Languages spoken by the guide',
+    type: [String],
+    example: ['English', 'Sinhala'],
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  languagesSpoken?: string[];
+
+  @ApiPropertyOptional({
+    description: 'Social links of the guide',
+    example: { facebook: 'https://facebook.com/example' },
+  })
+  @IsOptional()
+  @IsObject()
+  socialLinks?: {
+    facebook?: string;
+    instagram?: string;
+    twitter?: string;
+    linkedin?: string;
+  };
+
+  @ApiPropertyOptional({
+    description: 'Gallery photos from organized trips',
+    type: [String],
+    example: ['https://example.com/photo1.jpg'],
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  tripPhotos?: string[];
+
+  @ApiPropertyOptional({
+    description: 'Profile cover image URL',
+    example: 'https://example.com/cover.jpg',
+  })
+  @IsOptional()
+  @IsString()
+  coverImage?: string;
 }
