@@ -71,7 +71,6 @@ export class OnDemandTripsController {
     return this.onDemandTripsService.getAvailability(id);
   }
 
-  @Public()
   @Post(':id/book')
   @ApiOperation({ summary: 'Create a private trip instance from an on-demand template' })
   @ApiBody({ type: BookOnDemandTripDto })
