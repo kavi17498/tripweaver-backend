@@ -122,6 +122,19 @@ export class User {
   coverImage?: string;
 
   @ApiProperty({
+    description: 'Guide website URL',
+    required: false,
+  })
+  website?: string;
+
+  @ApiProperty({
+    description: 'Guide specializations',
+    type: [String],
+    required: false,
+  })
+  specializations?: string[];
+
+  @ApiProperty({
     description: 'User creation timestamp',
     example: '2026-03-20T10:30:00Z',
     required: false,

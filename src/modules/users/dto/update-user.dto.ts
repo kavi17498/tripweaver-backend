@@ -121,4 +121,22 @@ export class UpdateUserDto {
   @IsOptional()
   @IsString()
   coverImage?: string;
+
+  @ApiPropertyOptional({
+    description: 'Guide website URL',
+    example: 'https://example.com',
+  })
+  @IsOptional()
+  @IsString()
+  website?: string;
+
+  @ApiPropertyOptional({
+    description: 'Guide specializations',
+    type: [String],
+    example: ['Cultural Heritage', 'Adventure'],
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  specializations?: string[];
 }

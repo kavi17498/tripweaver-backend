@@ -414,6 +414,8 @@ export class UsersService {
       socialLinks: userData.socialLinks || {},
       tripPhotos: userData.tripPhotos || [],
       coverImage: userData.coverImage || '',
+      website: userData.website || '',
+      specializations: userData.specializations || [],
     };
 
     // 2. Fetch the trips organized by this user
