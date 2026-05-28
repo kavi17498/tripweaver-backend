@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsArray, IsDateString, IsNotEmpty, IsNumber, IsString, ValidateNested } from 'class-validator';
+import { IsArray, IsDateString, IsNotEmpty, IsNumber, IsOptional, IsString, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class AutoItineraryGeoCodeDto {
@@ -97,20 +97,20 @@ export class AutoItineraryRequestDto {
   @IsDateString()
   endDate: Date;
 
-  @ApiProperty({ description: 'Start time (HH:MM AM/PM)', example: '08:00 AM' })
-  @IsNotEmpty()
+  @ApiProperty({ description: 'Start time (HH:MM AM/PM)', example: '08:00 AM', required: false })
+  @IsOptional()
   @IsString()
-  startTime: string;
+  startTime?: string;
 
-  @ApiProperty({ description: 'End time (HH:MM AM/PM)', example: '06:00 PM' })
-  @IsNotEmpty()
+  @ApiProperty({ description: 'End time (HH:MM AM/PM)', example: '06:00 PM', required: false })
+  @IsOptional()
   @IsString()
-  endTime: string;
+  endTime?: string;
 
-  @ApiProperty({ description: 'Start location', example: 'Colombo' })
-  @IsNotEmpty()
+  @ApiProperty({ description: 'Start location', example: 'Colombo', required: false })
+  @IsOptional()
   @IsString()
-  startLocation: string;
+  startLocation?: string;
 
   @ApiProperty({ type: AutoItineraryIncludedDto })
   @ValidateNested()

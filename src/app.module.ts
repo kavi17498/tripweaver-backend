@@ -18,6 +18,7 @@ import { PaymentsModule } from './modules/payments/payments.module';
 import { VerficationModule } from './modules/verfication/verfication.module';
 import { VerificationMeetingModule } from './modules/verificationmeeting/verificationmeeting.module';
 import { ReviewsModule } from './modules/reviews/reviews.module';
+import { OnDemandTripsModule } from './modules/onDemandTrips/onDemandTrips.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { ReviewsModule } from './modules/reviews/reviews.module';
     VerficationModule,
     VerificationMeetingModule,
     ReviewsModule,
+    OnDemandTripsModule,
   ],
   controllers: [AppController],
   providers: [

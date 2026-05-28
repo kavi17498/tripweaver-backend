@@ -1,11 +1,11 @@
 import { ApiProperty } from '@nestjs/swagger';
 
 export class AutoItineraryActivity {
-  @ApiProperty({ description: 'Start time', example: '08:00 AM' })
-  startTime: string;
+  @ApiProperty({ description: 'Start time', example: '08:00 AM', required: false })
+  startTime?: string;
 
-  @ApiProperty({ description: 'End time', example: '10:00 AM' })
-  endTime: string;
+  @ApiProperty({ description: 'End time', example: '10:00 AM', required: false })
+  endTime?: string;
 
   @ApiProperty({ description: 'Activity title', example: 'Visit Galle Fort' })
   activity: string;

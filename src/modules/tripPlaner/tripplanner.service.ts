@@ -263,18 +263,18 @@ export class TripPlannerService {
        }
 
        private buildAutoItineraryPrompt(dto: AutoItineraryRequestDto): string {
+              const isOnDemand = dto.tripCategory?.toLowerCase().includes('on-demand') ?? false;
+
               return [
                      'Generate a day-by-day itinerary as strictly valid JSON only.',
-                     'Output schema:',
-                     '{"tripName":"","days":[{"day":1,"date":"YYYY-MM-DD","location":"","activities":[{"startTime":"08:00 AM","endTime":"10:00 AM","activity":"","location":"","description":""}]}]}',
+                     isOnDemand
+                            ? 'Output schema: {"tripName":"","days":[{"day":1,"date":"YYYY-MM-DD","location":"","activities":[{"activity":"","location":"","description":""}]}]}'
+                            : 'Output schema: {"tripName":"","days":[{"day":1,"date":"YYYY-MM-DD","location":"","activities":[{"startTime":"08:00 AM","endTime":"10:00 AM","activity":"","location":"","description":""}]}]}',
                      '',
                      `Trip name: ${dto.tripName}.`,
                      `Trip category: ${dto.tripCategory}.`,
                      `Start date: ${dto.startDate}.`,
                      `End date: ${dto.endDate}.`,
-                     `Daily start time: ${dto.startTime}.`,
-                     `Daily end time: ${dto.endTime}.`,
-                     `Start location: ${dto.startLocation}.`,
                      `Max participants: ${dto.maxParticipants}.`,
                      'Destinations:',
                      JSON.stringify(dto.destinations),
@@ -283,8 +283,12 @@ export class TripPlannerService {
                      '',
                      'Rules:',
                      '- Use only the provided destinations.',
-                     '- Create activities between the daily start and end time.',
-                     '- Include travel time or breaks if needed.',
+                     isOnDemand
+                            ? '- Return a simple list of activities without start or end times.'
+                            : '- Create activities between the daily start and end time.',
+                     isOnDemand
+                            ? '- Focus on ordered activities and keep descriptions concise.'
+                            : '- Include travel time or breaks if needed.',
                      '- Return JSON only, no markdown, no commentary.',
               ].join('\n');
        }

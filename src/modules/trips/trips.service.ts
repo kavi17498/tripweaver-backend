@@ -610,40 +610,38 @@ export class TripsService {
       updatedAt: new Date(),
     };
 
-    if (isPublic) {
-      const bookingMemberIds = Array.from(
-        new Set(
-          newParticipants
-            .map((p) => p.parentUserId)
-            .filter((uid): uid is string => Boolean(uid)),
-        ),
-      );
+    const bookingMemberIds = Array.from(
+      new Set(
+        newParticipants
+          .map((p) => p.parentUserId)
+          .filter((uid): uid is string => Boolean(uid)),
+      ),
+    );
 
-      if (bookingMemberIds.length > 0) {
-        const chatGroup = await this.chatGroupsService.ensureTripChatGroup({
-          tripId,
-          name: trip.tripName,
-          adminId: trip.organizer,
-          adminName: await this.resolveOrganizerName(trip.organizer),
-          description: `Discussion group for ${trip.tripName}`,
-          members: [trip.organizer],
-        });
+    if (bookingMemberIds.length > 0) {
+      const chatGroup = await this.chatGroupsService.ensureTripChatGroup({
+        tripId,
+        name: trip.tripName,
+        adminId: trip.organizer,
+        adminName: await this.resolveOrganizerName(trip.organizer),
+        description: `Discussion group for ${trip.tripName}`,
+        members: [trip.organizer],
+      });
 
-        await this.chatGroupsService.addMembers(chatGroup.id!, bookingMemberIds);
+      await this.chatGroupsService.addMembers(chatGroup.id!, bookingMemberIds);
 
-        // Send welcome message(s) from the chat admin (trip organizer)
-        const adminName = await this.resolveOrganizerName(trip.organizer);
-        for (const userId of bookingMemberIds) {
-          try {
-            const memberName = await this.resolveUserDisplayName(userId);
-            await this.chatMessagesService.create(chatGroup.id!, {
-              senderId: trip.organizer,
-              senderName: adminName,
-              message: `Hello, welcome ${memberName} to the chat group!`,
-            });
-          } catch (msgErr) {
-            console.error('Failed to send welcome message for user:', userId, msgErr);
-          }
+      // Send welcome message(s) from the chat admin (trip organizer)
+      const adminName = await this.resolveOrganizerName(trip.organizer);
+      for (const userId of bookingMemberIds) {
+        try {
+          const memberName = await this.resolveUserDisplayName(userId);
+          await this.chatMessagesService.create(chatGroup.id!, {
+            senderId: trip.organizer,
+            senderName: adminName,
+            message: `Hello, welcome ${memberName} to the chat group!`,
+          });
+        } catch (msgErr) {
+          console.error('Failed to send welcome message for user:', userId, msgErr);
         }
       }
     }
