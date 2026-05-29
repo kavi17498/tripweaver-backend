@@ -193,14 +193,18 @@ export class OnDemandTripsService {
 
     const busyDates = new Set<string>();
     busyRanges.forEach((range) => {
-      const start = new Date(`${range.startDate}T00:00:00`);
-      const end = new Date(`${range.endDate}T00:00:00`);
+      const startParts = range.startDate.split('-');
+      const start = new Date(Date.UTC(parseInt(startParts[0], 10), parseInt(startParts[1], 10) - 1, parseInt(startParts[2], 10)));
+
+      const endParts = range.endDate.split('-');
+      const end = new Date(Date.UTC(parseInt(endParts[0], 10), parseInt(endParts[1], 10) - 1, parseInt(endParts[2], 10)));
+
       if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return;
 
       const cursor = new Date(start);
       while (cursor <= end) {
         busyDates.add(cursor.toISOString().slice(0, 10));
-        cursor.setDate(cursor.getDate() + 1);
+        cursor.setUTCDate(cursor.getUTCDate() + 1);
       }
     });
 
@@ -226,13 +230,18 @@ export class OnDemandTripsService {
       throw new BadRequestException('This on-demand trip is not currently available for booking.');
     }
 
-    const startDate = new Date(`${dto.startDate}T00:00:00`);
+    const dateParts = dto.startDate.split('-');
+    const yearNum = parseInt(dateParts[0], 10);
+    const monthNum = parseInt(dateParts[1], 10) - 1;
+    const dayNum = parseInt(dateParts[2], 10);
+    const startDate = new Date(Date.UTC(yearNum, monthNum, dayNum));
+
     if (Number.isNaN(startDate.getTime())) {
       throw new BadRequestException('Invalid booking date.');
     }
 
     const endDate = new Date(startDate);
-    endDate.setDate(endDate.getDate() + Math.max(1, template.durationDays) - 1);
+    endDate.setUTCDate(endDate.getUTCDate() + Math.max(1, template.durationDays) - 1);
 
     const user = await this.usersService.findOne(userId);
     const participantName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Primary Participant';
@@ -276,11 +285,10 @@ export class OnDemandTripsService {
       tripParticipants = [];
     }
 
-    const dateObj = new Date(`${dto.startDate}T00:00:00`);
-    const day = String(dateObj.getDate()).padStart(2, '0');
-    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
-    const year = dateObj.getFullYear();
-    const formattedDate = `${day}/${month}/${year}`;
+    const startDayStr = String(startDate.getUTCDate()).padStart(2, '0');
+    const startMonthStr = String(startDate.getUTCMonth() + 1).padStart(2, '0');
+    const startYearStr = startDate.getUTCFullYear();
+    const formattedDate = `${startDayStr}/${startMonthStr}/${startYearStr}`;
     const customTripName = `${formattedDate} ${template.tripName} with ${participantName}`;
 
     const rawPayload = {
