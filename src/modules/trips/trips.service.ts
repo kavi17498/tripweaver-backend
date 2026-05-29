@@ -469,18 +469,26 @@ export class TripsService {
       }
     }
 
-    const updateData = {
+    const updateData: any = {
       ...updateTripDto,
-      photos: updateTripDto.photos,
-      coverImage:
-        updateTripDto.coverImage ??
-        (updateTripDto.photos && updateTripDto.photos.length > 0
-          ? updateTripDto.photos[0]
-          : undefined),
       updatedAt: new Date(),
     };
 
-    await db.collection(this.collectionName).doc(id).update(updateData);
+    if (updateTripDto.photos !== undefined) {
+      updateData.photos = updateTripDto.photos;
+    }
+
+    if (updateTripDto.coverImage !== undefined) {
+      updateData.coverImage = updateTripDto.coverImage;
+    } else if (updateTripDto.photos && updateTripDto.photos.length > 0) {
+      updateData.coverImage = updateTripDto.photos[0];
+    }
+
+    const cleanUpdateData = Object.fromEntries(
+      Object.entries(updateData).filter(([_, v]) => v !== undefined)
+    );
+
+    await db.collection(this.collectionName).doc(id).update(cleanUpdateData);
 
     return this.findOne(id);
   }
@@ -549,7 +557,7 @@ export class TripsService {
     const participantStatus = isPublic ? 'accepted' : 'pending';
 
     const bookingId = randomUUID();
-    const newParticipants: Participant[] = request.participants.map((participant) => ({
+    let newParticipants: Participant[] = request.participants.map((participant) => ({
       participantId: participant.participantId ?? randomUUID(),
       parentUserId: participant.parentUserId ?? null,
       name: participant.name,
@@ -561,6 +569,10 @@ export class TripsService {
       ...(participant.address !== undefined ? { address: participant.address } : {}),
       ...(participant.phone !== undefined ? { phone: participant.phone } : {}),
       ...(participant.email !== undefined ? { email: participant.email } : {}),
+      ...(participant.pickupLocation !== undefined ? { pickupLocation: participant.pickupLocation } : {}),
+      ...(participant.pickupDistanceKm !== undefined ? { pickupDistanceKm: participant.pickupDistanceKm } : {}),
+      ...(participant.pickupCost !== undefined ? { pickupCost: participant.pickupCost } : {}),
+      ...(participant.pickupTime !== undefined ? { pickupTime: participant.pickupTime } : {}),
     }));
 
     if (!trip.participants) {
@@ -569,6 +581,7 @@ export class TripsService {
 
     // Prevent duplicate bookings by the same user for the same trip (ignoring rejected ones)
     const existingParticipants = trip.participants || [];
+    const uniqueNewParticipants: Participant[] = [];
     for (const np of newParticipants) {
       if (np.parentUserId) {
         if (np.parentUserId === trip.organizer) {
@@ -576,6 +589,9 @@ export class TripsService {
         }
         const duplicate = existingParticipants.find((ep) => ep.parentUserId && ep.parentUserId === np.parentUserId && ep.status !== 'rejected');
         if (duplicate) {
+          if (category === TripCategory.PRIVATE_TRIP) {
+            continue; // Skip duplicates for private/on-demand trips
+          }
           throw new BadRequestException('You have already booked this trip.');
         }
       }
@@ -583,10 +599,15 @@ export class TripsService {
       if (np.email) {
         const duplicateByEmail = existingParticipants.find((ep) => ep.email && ep.email === np.email && ep.status !== 'rejected');
         if (duplicateByEmail) {
+          if (category === TripCategory.PRIVATE_TRIP) {
+            continue; // Skip duplicates for private/on-demand trips
+          }
           throw new BadRequestException('A participant with this email has already been booked for this trip.');
         }
       }
+      uniqueNewParticipants.push(np);
     }
+    newParticipants = uniqueNewParticipants;
 
     const activeParticipantsCount = existingParticipants.filter((p) => p.status !== 'rejected').length;
     const nextParticipantCount = activeParticipantsCount + newParticipants.length;

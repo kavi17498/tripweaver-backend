@@ -80,6 +80,6 @@ export class OnDemandTripsController {
       throw new UnauthorizedException('Unable to extract user identity from token');
     }
 
-    return this.onDemandTripsService.book(id, dto, request.user?.role);
+    return this.onDemandTripsService.book(id, dto, uid, request.user?.role);
   }
 }

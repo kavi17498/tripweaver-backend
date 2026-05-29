@@ -207,7 +207,20 @@ export class OnDemandTripsService {
     return { busyDates: Array.from(busyDates).sort(), busyRanges };
   }
 
-  async book(templateId: string, dto: BookOnDemandTripDto, userRole?: AuthRole): Promise<{ tripId: string }> {
+  private removeUndefined(obj: any): any {
+    if (Array.isArray(obj)) {
+      return obj.map((item) => this.removeUndefined(item));
+    } else if (obj !== null && typeof obj === 'object') {
+      return Object.fromEntries(
+        Object.entries(obj)
+          .filter(([_, v]) => v !== undefined)
+          .map(([k, v]) => [k, this.removeUndefined(v)])
+      );
+    }
+    return obj;
+  }
+
+  async book(templateId: string, dto: BookOnDemandTripDto, userId: string, userRole?: AuthRole): Promise<{ tripId: string }> {
     const template = await this.findOne(templateId);
     if (template.status !== TripStatus.APPROVED || template.isHidden) {
       throw new BadRequestException('This on-demand trip is not currently available for booking.');
@@ -221,31 +234,84 @@ export class OnDemandTripsService {
     const endDate = new Date(startDate);
     endDate.setDate(endDate.getDate() + Math.max(1, template.durationDays) - 1);
 
+    const user = await this.usersService.findOne(userId);
+    const participantName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Primary Participant';
+    
+    let age = 25;
+    if (user.dateOfBirth) {
+      const dob = new Date(user.dateOfBirth);
+      const today = new Date();
+      let calculatedAge = today.getFullYear() - dob.getFullYear();
+      const m = today.getMonth() - dob.getMonth();
+      if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) {
+        calculatedAge--;
+      }
+      age = Math.max(0, calculatedAge);
+    }
+
+    const participant = {
+      participantId: `part_${randomUUID()}`,
+      parentUserId: userId,
+      name: participantName,
+      gender: user.gender || 'male',
+      age,
+      email: user.email || '',
+      phone: user.phone || '',
+      status: 'accepted',
+      pickupLocation: dto.pickupLocation,
+      pickupDistanceKm: dto.pickupDistanceKm,
+      pickupCost: dto.pickupCost,
+      pickupTime: dto.startTime,
+    };
+
+    let tripParticipants: any[] = [];
+    if (dto.participants && dto.participants.length > 0) {
+      tripParticipants = dto.participants.map((p, idx) => ({
+        ...p,
+        participantId: p.participantId || `part_${randomUUID()}`,
+        parentUserId: idx === 0 ? userId : (p.parentUserId || null),
+        status: 'accepted',
+      }));
+    } else {
+      tripParticipants = [];
+    }
+
+    const dateObj = new Date(`${dto.startDate}T00:00:00`);
+    const day = String(dateObj.getDate()).padStart(2, '0');
+    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const year = dateObj.getFullYear();
+    const formattedDate = `${day}/${month}/${year}`;
+    const customTripName = `${formattedDate} ${template.tripName} with ${participantName}`;
+
+    const rawPayload = {
+      tripName: customTripName,
+      tripCategory: TripCategory.PRIVATE_TRIP,
+      paymentMethods: (template.paymentMethods as any) ?? ['Pay Online', 'Pay to Guide on Trip Day'],
+      destinations: template.destinations as any,
+      mainDestinations: template.mainDestinations,
+      startDate: dto.startDate,
+      endDate: endDate.toISOString().slice(0, 10),
+      startTime: dto.startTime,
+      endTime: '23:59',
+      startLocation: template.startLocation,
+      organizer: template.organizer,
+      price: template.price,
+      itinerary: template.itinerary as any,
+      included: template.included as any,
+      participants: tripParticipants,
+      photos: template.photos ?? [],
+      coverImage: template.coverImage ?? template.photos?.[0] ?? '',
+      description: template.description,
+      maxParticipants: template.maxParticipants,
+      pickupType: template.pickupType as any,
+      pickupCostPerKm: template.pickupCostPerKm,
+      pickupStartLocation: template.pickupStartLocation as any,
+    };
+
+    const cleanPayload = this.removeUndefined(rawPayload);
+
     const trip = await this.tripsService.create(
-      {
-        tripName: template.tripName,
-        tripCategory: TripCategory.PRIVATE_TRIP,
-        paymentMethods: (template.paymentMethods as any) ?? ['Pay Online', 'Pay to Guide on Trip Day'],
-        destinations: template.destinations as any,
-        mainDestinations: template.mainDestinations,
-        startDate: dto.startDate,
-        endDate: endDate.toISOString().slice(0, 10),
-        startTime: dto.startTime,
-        endTime: '23:59',
-        startLocation: template.startLocation,
-        organizer: template.organizer,
-        price: template.price,
-        itinerary: template.itinerary as any,
-        included: template.included as any,
-        participants: [],
-        photos: template.photos ?? [],
-        coverImage: template.coverImage ?? template.photos?.[0] ?? '',
-        description: template.description,
-        maxParticipants: template.maxParticipants,
-        pickupType: template.pickupType as any,
-        pickupCostPerKm: template.pickupCostPerKm,
-        pickupStartLocation: template.pickupStartLocation as any,
-      } as any,
+      cleanPayload as any,
       'guide',
     );
 
