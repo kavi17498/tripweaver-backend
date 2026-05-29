@@ -9,6 +9,7 @@ import * as crypto from 'crypto';
 import { TripsService } from '../trips/trips.service';
 import { Participant } from '../trips/entities/participant.entity';
 import { TripPaymentMethod } from '../trips/entities/trip-payment-method.enum';
+import { TripCategory } from '../trips/entities/trip-category.enum';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { OrganizerEarningsSummaryEntity, TripEarningsBreakdownEntity } from './entities/organizer-earnings.entity';
 
@@ -194,9 +195,24 @@ export class PaymentsService {
 				uncategorizedPickupEarned += pPickupCost;
 			}
 
-			const onlineBaseEarned = onlineParticipantCount * pricePerParticipant;
-			const payToGuideBaseEarned = payToGuideParticipantCount * pricePerParticipant;
-			const uncategorizedBaseEarned = uncategorizedParticipantCount * pricePerParticipant;
+			let onlineBaseEarned = 0;
+			let payToGuideBaseEarned = 0;
+			let uncategorizedBaseEarned = 0;
+
+			const isPrivate = (trip as any).tripCategory === TripCategory.PRIVATE_TRIP;
+			if (isPrivate) {
+				if (onlineParticipantCount > 0) {
+					onlineBaseEarned = pricePerParticipant;
+				} else if (payToGuideParticipantCount > 0) {
+					payToGuideBaseEarned = pricePerParticipant;
+				} else if (uncategorizedParticipantCount > 0) {
+					uncategorizedBaseEarned = pricePerParticipant;
+				}
+			} else {
+				onlineBaseEarned = onlineParticipantCount * pricePerParticipant;
+				payToGuideBaseEarned = payToGuideParticipantCount * pricePerParticipant;
+				uncategorizedBaseEarned = uncategorizedParticipantCount * pricePerParticipant;
+			}
 
 			const onlineEarned = onlineBaseEarned + onlinePickupEarned;
 			const payToGuideEarned = payToGuideBaseEarned + payToGuidePickupEarned;
