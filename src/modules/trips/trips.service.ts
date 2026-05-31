@@ -902,9 +902,15 @@ export class TripsService {
     filters: ApprovedPublicTripsQueryDto,
   ): Promise<TripCardDto[]> {
     const approvedTrips = await this.findAll(TripStatus.APPROVED);
+    const now = new Date();
 
     const filtered = approvedTrips.filter((trip) => {
       if (trip.tripCategory === TripCategory.PRIVATE_TRIP) {
+        return false;
+      }
+
+      const endDate = trip.endDate ? new Date(`${trip.endDate}T23:59:59.999Z`) : null;
+      if (!endDate || Number.isNaN(endDate.getTime()) || endDate.getTime() < now.getTime()) {
         return false;
       }
 
@@ -919,7 +925,10 @@ export class TripsService {
         return false;
       }
 
-      if (filters.tripName && trip.tripName !== filters.tripName) {
+      if (
+        filters.tripName &&
+        !String(trip.tripName || '').toLowerCase().includes(String(filters.tripName).toLowerCase())
+      ) {
         return false;
       }
 
@@ -927,7 +936,10 @@ export class TripsService {
         return false;
       }
 
-      if (filters.startLocation && trip.startLocation !== filters.startLocation) {
+      if (
+        filters.startLocation &&
+        !String(trip.startLocation || '').toLowerCase().includes(String(filters.startLocation).toLowerCase())
+      ) {
         return false;
       }
 

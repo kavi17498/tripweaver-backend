@@ -19,6 +19,7 @@ import { VerficationModule } from './modules/verfication/verfication.module';
 import { VerificationMeetingModule } from './modules/verificationmeeting/verificationmeeting.module';
 import { ReviewsModule } from './modules/reviews/reviews.module';
 import { OnDemandTripsModule } from './modules/onDemandTrips/onDemandTrips.module';
+import { SearchModule } from './modules/search/search.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { OnDemandTripsModule } from './modules/onDemandTrips/onDemandTrips.modul
     VerificationMeetingModule,
     ReviewsModule,
     OnDemandTripsModule,
+    SearchModule,
   ],
   controllers: [AppController],
   providers: [
