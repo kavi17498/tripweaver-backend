@@ -37,8 +37,14 @@ export class TripCardDto {
   @ApiProperty({ description: 'Organizer display name', example: 'John Doe' })
   organizerName!: string;
 
+  @ApiProperty({ description: 'Organizer user ID', example: 'user_12345' })
+  organizer!: string;
+
   @ApiPropertyOptional({ description: 'Average rating', example: 4.5 })
   rating?: number;
+
+  @ApiPropertyOptional({ description: 'Organizer overall profile rating', example: 4.8 })
+  organizerRating?: number | null;
 
   @ApiProperty({ description: 'Trip status', example: 'approved' })
   status!: string;

@@ -7,7 +7,7 @@ import {
   IsOptional,
   ValidateNested,
 } from 'class-validator';
-import { TripPaymentMethod } from '../entities/trip-core.entity';
+import { TripPaymentMethod } from '../entities/trip-payment-method.enum';
 import { Participant } from '../entities/participant.entity';
 
 export class AddParticipantsDto {

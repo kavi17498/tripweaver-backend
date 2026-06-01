@@ -34,7 +34,10 @@ import { UpdateTripDto } from './dto/update-trip.dto';
 import { Trip } from './entities/trip.entity';
 import { ApprovedPublicTripsQueryDto } from './dto/approved-public-trips-query.dto';
 import { TripCardDto } from './dto/trip-card.dto';
+import { UpdateParticipantsStatusDto } from './dto/update-participants-status.dto';
+import { CancelTripDto } from './dto/cancel-trip.dto';
 import { Public } from '../../auth/public.decorator';
+
 
 type AuthenticatedRequest = Request & {
   user?: {
@@ -100,6 +103,66 @@ export class TripsController {
       throw new UnauthorizedException('Unable to extract user identity from token');
     }
     return this.tripsService.findByOrganizer(uid);
+  }
+
+  /**
+   * Get trips the user participated in, excluding trips they created
+   * GET /trips/participated
+   */
+  @Get('participated')
+  @ApiOperation({
+    summary: 'Get trips participated by current user',
+    description:
+      'Returns trips where the authenticated user has at least one participant record, but excludes trips created by that same user.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'List of participated trips retrieved successfully',
+    type: [Trip],
+  })
+  async findParticipatedTrips(@Req() request: AuthenticatedRequest): Promise<Trip[]> {
+    const uid = request.user?.uid || request.user?.sub;
+
+    if (!uid) {
+      throw new UnauthorizedException('Unable to extract user identity from token');
+    }
+
+    return this.tripsService.findParticipatedTrips(uid);
+  }
+
+  /**
+   * Cancel the authenticated user's booking for a trip
+   * DELETE /trips/:id/booking
+   */
+  @Delete(':id/booking')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Cancel current user booking',
+    description:
+      'Removes the authenticated user from trip participants, removes them from the related chat group, posts a cancellation message, notifies the trip creator, and removes matching payment records when present.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Unique trip identifier',
+    example: 'trip_12345',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Booking canceled successfully',
+    type: Trip,
+  })
+  @ApiNotFoundResponse({ description: 'Trip or booking not found' })
+  async cancelBooking(
+    @Param('id') id: string,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<Trip> {
+    const uid = request.user?.uid || request.user?.sub;
+
+    if (!uid) {
+      throw new UnauthorizedException('Unable to extract user identity from token');
+    }
+
+    return this.tripsService.cancelBooking(id, uid);
   }
 
   /**
@@ -269,6 +332,44 @@ export class TripsController {
   }
 
   /**
+   * Cancel a trip as the organizer or an admin
+   * PATCH /trips/:id/cancel
+   */
+  @Patch(':id/cancel')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Cancel a trip',
+    description:
+      'Cancels a trip with a required reason, updates the trip status, notifies participants, and posts a cancellation message to the trip chat group.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Unique trip identifier',
+    example: 'trip_12345',
+  })
+  @ApiBody({ type: CancelTripDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Trip canceled successfully',
+    type: Trip,
+  })
+  @ApiNotFoundResponse({ description: 'Trip not found' })
+  async cancelTrip(
+    @Param('id') id: string,
+    @Body() cancelTripDto: CancelTripDto,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<Trip> {
+    const uid = request.user?.uid || request.user?.sub;
+    const userRole = request.user?.role;
+
+    if (!uid) {
+      throw new UnauthorizedException('Unable to extract user identity from token');
+    }
+
+    return this.tripsService.cancelTrip(id, uid, cancelTripDto.reason, userRole);
+  }
+
+  /**
    * Add participant to trip
    * POST /trips/:id/participants
    */
@@ -321,6 +422,34 @@ export class TripsController {
   }
 
   /**
+   * Update participants status (approve/reject)
+   * PATCH /trips/:id/participants/status
+   */
+  @Patch(':id/participants/status')
+  @ApiOperation({
+    summary: 'Update participants status (approve/reject)',
+    description: 'Update the status of multiple participants on a trip to accepted or rejected.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Unique trip identifier',
+    example: 'trip_12345',
+  })
+  @ApiBody({ type: UpdateParticipantsStatusDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Participants status updated successfully',
+    type: Trip,
+  })
+  @ApiNotFoundResponse({ description: 'Trip not found' })
+  async updateParticipantsStatus(
+    @Param('id') id: string,
+    @Body() dto: UpdateParticipantsStatusDto,
+  ): Promise<Trip> {
+    return this.tripsService.updateParticipantsStatus(id, dto.participantIds, dto.status);
+  }
+
+  /**
    * Update a participant on a trip
    * PATCH /trips/:id/participants/:participantId
    */
@@ -354,6 +483,8 @@ export class TripsController {
   ): Promise<Trip> {
     return this.tripsService.updateParticipant(id, participantId, participant);
   }
+
+
 
   /**
    * Delete a trip

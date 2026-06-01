@@ -11,7 +11,9 @@ import {
   Query,
   Request,
   BadRequestException,
+  UnauthorizedException,
 } from '@nestjs/common';
+import type { Request as ExpressRequest } from 'express';
 import {
   ApiTags,
   ApiOperation,
@@ -27,6 +29,14 @@ import { ChatGroupsService } from './chatgroups.service';
 import { CreateChatGroupDto } from './dto/create-chatgroup.dto';
 import { UpdateChatGroupDto } from './dto/update-chatgroup.dto';
 import { ChatGroup } from './entities/chatgroup.entity';
+
+type AuthenticatedRequest = ExpressRequest & {
+  user?: {
+    uid?: string;
+    sub?: string;
+    role?: string;
+  };
+};
 
 @ApiTags('chatgroups')
 @ApiSecurity('firebase-token')
@@ -52,6 +62,27 @@ export class ChatGroupsController {
   })
   async create(@Body() createChatGroupDto: CreateChatGroupDto): Promise<ChatGroup> {
     return this.chatGroupsService.create(createChatGroupDto);
+  }
+
+  @Post('custom-request')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: 'Create a new custom trip request chat group',
+    description: 'Creates a custom trip request chat group, seeds initial messages, and notifies the guide.',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Custom trip request chat group created successfully',
+    type: ChatGroup,
+  })
+  async createCustomRequest(
+    @Body() body: {
+      guideId: string;
+      travelerId: string;
+      travelerName: string;
+    },
+  ): Promise<ChatGroup> {
+    return this.chatGroupsService.createCustomRequest(body);
   }
 
   /**
@@ -103,6 +134,21 @@ export class ChatGroupsController {
   @ApiNotFoundResponse({ description: 'No chat group found for this trip' })
   async findByTripId(@Param('tripId') tripId: string): Promise<ChatGroup[]> {
     return this.chatGroupsService.findByTripId(tripId);
+  }
+
+  @Get('trip/:tripId/context')
+  @ApiOperation({
+    summary: 'Get trip chat context',
+    description: 'Returns the chat group plus trip, organizer, and participant details for the current user.',
+  })
+  async getTripChatContext(@Param('tripId') tripId: string, @Request() req: AuthenticatedRequest) {
+    const uid = req.user?.uid || req.user?.sub;
+
+    if (!uid) {
+      throw new UnauthorizedException('Unable to extract user identity from token');
+    }
+
+    return this.chatGroupsService.getTripChatContext(tripId, uid);
   }
 
   /**

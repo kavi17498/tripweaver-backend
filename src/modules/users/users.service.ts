@@ -232,6 +232,7 @@ export class UsersService {
     currentUid: string,
     userIdsInput: string[] | string | undefined,
     role: string,
+    requesterRole?: string,
   ): Promise<{
     status: 'success';
     assigned: string[];
@@ -239,14 +240,19 @@ export class UsersService {
   }> {
     const auth = this.firebaseService.getAuth();
 
-    // Verify current user is superadmin
+    const requestedRole = role?.trim().toLowerCase();
+
+    // Verify current user permission.
     try {
       const currentUser = await auth.getUser(currentUid);
-      const currentRole = currentUser.customClaims?.role;
+      const currentRole = (currentUser.customClaims?.role || requesterRole || '').toString().toLowerCase();
+      const canAssignGuide = requestedRole === 'guide' && (currentRole === 'admin' || currentRole === 'superadmin');
+      const canAssignUser = requestedRole === 'user' && (currentRole === 'admin' || currentRole === 'superadmin');
+      const canAssignOthers = currentRole === 'superadmin';
 
-      if (currentRole !== 'superadmin') {
+      if (!canAssignGuide && !canAssignUser && !canAssignOthers) {
         throw new ForbiddenException(
-          'Only superadmin users can assign roles to other users',
+          'Only superadmin users can assign roles. Admin can assign user or guide roles only.',
         );
       }
     } catch (error: unknown) {
@@ -260,7 +266,7 @@ export class UsersService {
         throw error;
       }
 
-      throw new InternalServerErrorException('Failed to verify superadmin status');
+      throw new InternalServerErrorException('Failed to verify user role permissions');
     }
 
     // Validate role is a non-empty string
@@ -288,6 +294,7 @@ export class UsersService {
 
     const assigned: string[] = [];
     const failed: Array<{ userId: string; reason: string }> = [];
+    const db = this.firebaseService.getFirestore();
 
     for (const userId of normalizedUserIds) {
       // Skip current user - keep them as superadmin
@@ -303,6 +310,35 @@ export class UsersService {
           ...existingClaims,
           role: role.trim(),
         });
+
+        const nextUserUpdate: Record<string, unknown> = {
+          updatedAt: new Date(),
+          isVerified: requestedRole === 'user' ? false : true,
+        };
+
+        await db.collection(this.collectionName).doc(userId).set(nextUserUpdate, { merge: true });
+
+        if (requestedRole === 'guide') {
+          await db.collection('usertogudieLogs').add({
+            userId,
+            assignedBy: currentUid,
+            role: 'guide',
+            createdAt: new Date(),
+          });
+        }
+
+        if (requestedRole === 'user') {
+          const notificationsCollection = db.collection('notifications');
+          await notificationsCollection.add({
+            userId,
+            type: 'account-alert',
+            title: 'Role changed to user',
+            description: 'Your account role has been changed to user and verification has been reset to false by an admin.',
+            read: false,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          });
+        }
 
         assigned.push(userId);
       } catch (error: unknown) {
@@ -324,5 +360,174 @@ export class UsersService {
       assigned,
       failed,
     };
+  }
+
+  private toDate(value: unknown): Date | null {
+    if (!value) return null;
+    if (value instanceof Date) {
+      return value;
+    }
+
+    if (
+      value &&
+      typeof value === 'object' &&
+      'toDate' in value &&
+      typeof (value as { toDate: () => Date }).toDate === 'function'
+    ) {
+      return (value as { toDate: () => Date }).toDate();
+    }
+
+    if (typeof value === 'string' || typeof value === 'number') {
+      const parsed = new Date(value);
+      if (!Number.isNaN(parsed.getTime())) {
+        return parsed;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Get public profile and organized trips for an organizer
+   */
+  async getOrganizerPublicProfile(id: string): Promise<any> {
+    const db = this.firebaseService.getFirestore();
+
+    // 1. Get organizer user document
+    const userDoc = await db.collection(this.collectionName).doc(id).get();
+    if (!userDoc.exists) {
+      throw new NotFoundException(`Organizer with ID ${id} not found`);
+    }
+
+    const userData = userDoc.data() || {};
+    const organizer = {
+      id: userDoc.id,
+      firstName: userData.firstName || '',
+      lastName: userData.lastName || '',
+      profileImage: userData.profileImage || '',
+      bio: userData.bio || '',
+      city: userData.city || '',
+      country: userData.country || '',
+      isVerified: userData.isVerified || false,
+      createdAt: this.toDate(userData.createdAt),
+      languagesSpoken: userData.languagesSpoken || [],
+      socialLinks: userData.socialLinks || {},
+      tripPhotos: userData.tripPhotos || [],
+      coverImage: userData.coverImage || '',
+      website: userData.website || '',
+      specializations: userData.specializations || [],
+    };
+
+    // 2. Fetch the trips organized by this user
+    const tripsSnapshot = await db
+      .collection('trips')
+      .where('organizer', '==', id)
+      .get();
+
+    const trips: any[] = [];
+
+    tripsSnapshot.forEach((doc) => {
+      const data = doc.data() || {};
+      // Skip private trips
+      if (data.tripCategory !== 'Private trip') {
+        trips.push({
+          id: doc.id,
+          ...data,
+          createdAt: this.toDate(data.createdAt),
+          updatedAt: this.toDate(data.updatedAt),
+          statusUpdatedAt: this.toDate(data.statusUpdatedAt),
+        });
+      }
+    });
+
+    // 3. Fetch reviews for these trips
+    const tripsWithReviews = await Promise.all(
+      trips.map(async (trip) => {
+        const reviewsSnapshot = await db
+          .collection('reviews')
+          .where('tripId', '==', trip.id)
+          .get();
+
+        const reviews: any[] = [];
+        let totalRating = 0;
+
+        reviewsSnapshot.forEach((rDoc) => {
+          const rData = rDoc.data() || {};
+          const mappedReview = {
+            id: rDoc.id,
+            ...rData,
+            createdAt: this.toDate(rData.createdAt),
+            updatedAt: this.toDate(rData.updatedAt || rData.createdAt),
+          };
+          reviews.push(mappedReview);
+          totalRating += Number(rData.rating || 0);
+        });
+
+        // Sort reviews by date descending
+        reviews.sort((a, b) => {
+          const aTime = a.createdAt ? a.createdAt.getTime() : 0;
+          const bTime = b.createdAt ? b.createdAt.getTime() : 0;
+          return bTime - aTime;
+        });
+
+        const averageRating = reviews.length > 0 ? totalRating / reviews.length : 0;
+
+        return {
+          ...trip,
+          reviews,
+          averageRating: parseFloat(averageRating.toFixed(1)),
+          reviewCount: reviews.length,
+        };
+      })
+    );
+
+    // Calculate overall organizer statistics
+    const allReviews = tripsWithReviews.flatMap((t) => t.reviews);
+    const overallRating =
+      allReviews.length > 0
+        ? parseFloat(
+            (
+              allReviews.reduce((sum, r) => sum + r.rating, 0) /
+              allReviews.length
+            ).toFixed(1),
+          )
+        : null;
+
+    return {
+      organizer,
+      trips: tripsWithReviews,
+      overallRating,
+      totalReviews: allReviews.length,
+    };
+  }
+
+  /**
+   * Get all organizers (verified guides)
+   */
+  async findAllOrganizers(): Promise<User[]> {
+    const db = this.firebaseService.getFirestore();
+    const snapshot = await db
+      .collection(this.collectionName)
+      .where('isVerified', '==', true)
+      .get();
+
+    const users: User[] = [];
+    const auth = this.firebaseService.getAuth();
+
+    for (const doc of snapshot.docs) {
+      const userData = doc.data();
+      const userId = doc.id;
+      try {
+        const authUser = await auth.getUser(userId);
+        const role = authUser.customClaims?.role;
+        if (role === 'guide' || role === 'admin' || role === 'superadmin') {
+          users.push({ id: userId, ...userData } as User);
+        }
+      } catch (err) {
+        users.push({ id: userId, ...userData } as User);
+      }
+    }
+
+    return users;
   }
 }

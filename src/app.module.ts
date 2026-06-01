@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { FirebaseModule } from './firebase/firebase.module';
@@ -14,10 +15,16 @@ import { ChatGroupsModule } from './modules/chatgroups/chatgroups.module';
 import { ChatMessagesModule } from './modules/chatmessages/chatmessages.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { PaymentsModule } from './modules/payments/payments.module';
+import { VerficationModule } from './modules/verfication/verfication.module';
+import { VerificationMeetingModule } from './modules/verificationmeeting/verificationmeeting.module';
+import { ReviewsModule } from './modules/reviews/reviews.module';
+import { OnDemandTripsModule } from './modules/onDemandTrips/onDemandTrips.module';
+import { SearchModule } from './modules/search/search.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    ScheduleModule.forRoot(),
     FirebaseModule,
     UsersModule,
     TripsModule,
@@ -27,6 +34,11 @@ import { PaymentsModule } from './modules/payments/payments.module';
     AdminModule,
     TripPlannerModule,
     PaymentsModule,
+    VerficationModule,
+    VerificationMeetingModule,
+    ReviewsModule,
+    OnDemandTripsModule,
+    SearchModule,
   ],
   controllers: [AppController],
   providers: [

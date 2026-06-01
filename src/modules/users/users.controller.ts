@@ -28,6 +28,7 @@ import { Request } from 'express';
 import { UsersService } from './users.service';
 import { CreateUserDto, UpdateUserDto, AssignRoleDto } from './dto';
 import { User } from './entities/user.entity';
+import { Public } from '../../auth/public.decorator';
 
 type AuthenticatedRequest = Request & {
   user?: {
@@ -64,14 +65,15 @@ export class UsersController {
     targetUserId: string,
   ): void {
     const { uid, role } = this.getRequesterIdentity(request);
-    const isAdmin = role === 'admin' || role === 'superadmin';
+    const isAdmin = role === 'admin' || role === 'superadmin' || role === 'guide';
 
     if (!isAdmin && uid !== targetUserId) {
       throw new ForbiddenException(
-        'You can only access your own user data unless you are admin or superadmin',
+        'You can only access your own user data unless you are admin, superadmin, or guide',
       );
     }
   }
+
 
   private assertAdminOnly(request: AuthenticatedRequest): void {
     const { role } = this.getRequesterIdentity(request);
@@ -189,6 +191,41 @@ export class UsersController {
   }
 
   /**
+   * Get public profile and organized trips for an organizer
+   * GET /users/organizer/:id
+   */
+  @Public()
+  @Get('organizer/:id')
+  @ApiOperation({
+    summary: 'Get organizer public profile',
+    description: 'Retrieve public profile details, ratings, and public trips for an organizer by their ID.',
+  })
+  @ApiParam({ name: 'id', description: 'Organizer user ID', example: 'user_12345' })
+  @ApiResponse({
+    status: 200,
+    description: 'Organizer profile retrieved successfully',
+  })
+  @ApiNotFoundResponse({ description: 'Organizer not found' })
+  async getOrganizerPublicProfile(@Param('id') id: string): Promise<any> {
+    return this.usersService.getOrganizerPublicProfile(id);
+  }
+
+  @Public()
+  @Get('organizers')
+  @ApiOperation({
+    summary: 'Get all organizers',
+    description: 'Retrieve a list of all verified guides/organizers.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'List of all organizers retrieved successfully',
+    type: [User],
+  })
+  async findAllOrganizers(): Promise<User[]> {
+    return this.usersService.findAllOrganizers();
+  }
+
+  /**
    * Get a user by ID
    * GET /users/:id
    */
@@ -297,7 +334,7 @@ export class UsersController {
   @ApiOperation({
     summary: 'Assign role to one or multiple users',
     description:
-      'Superadmin users can assign roles to other users. Current user is skipped if included. Accepts single userId (string) or multiple userIds (array) with a role name.',
+      'Superadmin users can assign any role. Admin users can assign only guide role. Current user is skipped if included. Accepts single userId (string) or multiple userIds (array) with a role name.',
   })
   @ApiBody({ type: AssignRoleDto })
   @ApiResponse({
@@ -331,14 +368,12 @@ export class UsersController {
     this.assertAdminOnly(request);
 
     const { role } = this.getRequesterIdentity(request);
-    if (role !== 'superadmin') {
-      throw new ForbiddenException('Only superadmin users can assign roles to other users');
-    }
 
     return this.usersService.assignRolesToUsers(
       currentUid,
       assignRoleDto.userIds?.length ? assignRoleDto.userIds : assignRoleDto.userId,
       assignRoleDto.role,
+      role,
     );
   }
 }

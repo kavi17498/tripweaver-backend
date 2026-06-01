@@ -16,11 +16,7 @@ import { Destination } from './destination.entity';
 import { Included } from './included.entity';
 import { Itinerary } from './itinerary.entity';
 import { Participant } from './participant.entity';
-
-export enum TripPaymentMethod {
-  PAY_ONLINE = 'Pay Online',
-  PAY_TO_GUIDE_ON_TRIP_DAY = 'Pay to Guide on Trip Day',
-}
+import { TripPaymentMethod } from './trip-payment-method.enum';
 
 export class MainDestination {
   @ApiProperty({ description: 'Main destination name', example: 'Galle Fort' })
@@ -39,6 +35,23 @@ export class MainDestination {
   lng!: number;
 }
 
+export class PickupStartLocation {
+  @ApiProperty({ description: 'Pickup start location name', example: 'Colombo Airport' })
+  @IsNotEmpty()
+  @IsString()
+  name!: string;
+
+  @ApiProperty({ description: 'Latitude', example: 6.9271 })
+  @IsNotEmpty()
+  @IsNumber()
+  lat!: number;
+
+  @ApiProperty({ description: 'Longitude', example: 79.8612 })
+  @IsNotEmpty()
+  @IsNumber()
+  lng!: number;
+}
+
 export class TripCore {
   @ApiProperty({ description: 'Trip name', example: 'Sri Lanka Adventure' })
   @IsNotEmpty()
@@ -48,7 +61,7 @@ export class TripCore {
   @ApiProperty({
     description: 'Trip category',
     enum: TripCategory,
-    example: TripCategory.SOLO_TRIP_WITH_GUIDE,
+    example: TripCategory.PUBLIC_TRIP,
   })
   @IsNotEmpty()
   @IsEnum(TripCategory)
@@ -100,6 +113,16 @@ export class TripCore {
   @IsNotEmpty()
   @IsString()
   startTime!: string;
+
+  @ApiProperty({
+    description: 'End time (HH:mm format, 24-hour)',
+    example: '18:00',
+    type: String,
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  endTime?: string;
 
   @ApiProperty({
     description: 'Start location/address',
@@ -200,4 +223,45 @@ export class TripCore {
   @IsOptional()
   @IsNumber()
   maxParticipants?: number;
+
+  @ApiProperty({
+    description: 'Pickup type',
+    enum: [
+      'Free Pickup',
+      'Pickup Available',
+      'Free Pickup from Bandaranaike International Airport',
+      'Free Pickup from Mattala Airport',
+      'Meet at Location',
+    ],
+    example: 'Meet at Location',
+  })
+  @IsNotEmpty()
+  @IsString()
+  pickupType!:
+    | 'Free Pickup'
+    | 'Pickup Available'
+    | 'Free Pickup from Bandaranaike International Airport'
+    | 'Free Pickup from Mattala Airport'
+    | 'Meet at Location';
+
+  @ApiProperty({
+    description:
+      'Pickup cost per km (required if pickupType is Pickup Available or an airport pickup option)',
+    example: 50,
+    required: false,
+  })
+  @IsOptional()
+  @IsNumber()
+  pickupCostPerKm?: number;
+
+  @ApiProperty({
+    description:
+      'Pickup start location (required if pickupType is Free Pickup, Pickup Available, or an airport pickup option)',
+    type: () => PickupStartLocation,
+    required: false,
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => PickupStartLocation)
+  pickupStartLocation?: PickupStartLocation;
 }

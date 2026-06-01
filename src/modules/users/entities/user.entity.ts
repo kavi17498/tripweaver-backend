@@ -91,6 +91,50 @@ export class User {
   isVerified: boolean;
 
   @ApiProperty({
+    description: 'Languages spoken by the guide',
+    type: [String],
+    required: false,
+  })
+  languagesSpoken?: string[];
+
+  @ApiProperty({
+    description: 'Social media links of the guide',
+    required: false,
+  })
+  socialLinks?: {
+    facebook?: string;
+    instagram?: string;
+    twitter?: string;
+    linkedin?: string;
+  };
+
+  @ApiProperty({
+    description: 'Gallery photos from organized trips',
+    type: [String],
+    required: false,
+  })
+  tripPhotos?: string[];
+
+  @ApiProperty({
+    description: 'Profile cover image URL',
+    required: false,
+  })
+  coverImage?: string;
+
+  @ApiProperty({
+    description: 'Guide website URL',
+    required: false,
+  })
+  website?: string;
+
+  @ApiProperty({
+    description: 'Guide specializations',
+    type: [String],
+    required: false,
+  })
+  specializations?: string[];
+
+  @ApiProperty({
     description: 'User creation timestamp',
     example: '2026-03-20T10:30:00Z',
     required: false,

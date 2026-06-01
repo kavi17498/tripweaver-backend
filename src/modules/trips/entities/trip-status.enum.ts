@@ -4,4 +4,5 @@ export enum TripStatus {
   APPROVED = 'approved',
   PENDING = 'pending',
   REJECTED = 'rejected',
+  CANCELLED = 'cancelled',
 }

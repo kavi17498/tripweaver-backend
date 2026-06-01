@@ -88,4 +88,19 @@ export class NotificationsService {
       read: false,
     });
   }
+
+  async createReviewReminderNotification(params: {
+    userId: string;
+    tripId: string;
+    tripName: string;
+  }): Promise<NotificationEntity> {
+    return this.create({
+      userId: params.userId,
+      type: 'reminder',
+      title: `Post your review for ${params.tripName}`,
+      description: `Your trip "${params.tripName}" has ended. Share your experience with the other participants.`,
+      tripId: params.tripId,
+      read: false,
+    });
+  }
 }

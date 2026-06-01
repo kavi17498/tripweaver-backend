@@ -2,6 +2,8 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { FirebaseService } from '../../firebase/firebase.service';
@@ -11,13 +13,15 @@ import { CreateTripDto } from './dto/create-trip.dto';
 import { UpdateParticipantDto } from './dto/update-participant.dto';
 import { UpdateTripDto } from './dto/update-trip.dto';
 import { TripStatus } from './entities/trip-status.enum';
-import { TripPaymentMethod } from './entities/trip-core.entity';
+import { TripPaymentMethod } from './entities/trip-payment-method.enum';
 import { Participant } from './entities/participant.entity';
 import { TripCategory } from './entities/trip-category.enum';
 import { ApprovedPublicTripsQueryDto } from './dto/approved-public-trips-query.dto';
 import { TripCardDto } from './dto/trip-card.dto';
 import { UsersService } from '../users/users.service';
 import { ChatGroupsService } from '../chatgroups/chatgroups.service';
+import { ChatMessagesService } from '../chatmessages/chatmessages.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class TripsService {
@@ -26,10 +30,20 @@ export class TripsService {
   // small cache for organizerName lookups to avoid repeated DB calls
   private organizerNameCache = new Map<string, string>();
 
-  private isTripExpired(endDate?: string): boolean {
+  private normalizeEndTime(endTime?: string): string {
+    if (!endTime) return '23:59:59.999';
+
+    const trimmedEndTime = endTime.trim();
+    if (/^\d{2}:\d{2}$/.test(trimmedEndTime)) return `${trimmedEndTime}:59.999`;
+    if (/^\d{2}:\d{2}:\d{2}$/.test(trimmedEndTime)) return `${trimmedEndTime}.999`;
+
+    return trimmedEndTime;
+  }
+
+  private isTripExpired(endDate?: string, endTime?: string): boolean {
     if (!endDate) return true;
 
-    const tripEnd = new Date(`${endDate}T23:59:59.999`);
+    const tripEnd = new Date(`${endDate}T${this.normalizeEndTime(endTime)}`);
     if (Number.isNaN(tripEnd.getTime())) return true;
 
     return new Date() > tripEnd;
@@ -38,7 +52,10 @@ export class TripsService {
   constructor(
     private firebaseService: FirebaseService,
     private usersService: UsersService,
+    @Inject(forwardRef(() => ChatGroupsService))
     private chatGroupsService: ChatGroupsService,
+    private chatMessagesService: ChatMessagesService,
+    private notificationsService: NotificationsService,
   ) {}
 
   private async resolveOrganizerName(organizerId?: string): Promise<string> {
@@ -56,6 +73,15 @@ export class TripsService {
       // If user not found or error, fall back to id
       this.organizerNameCache.set(organizerId, organizerId);
       return organizerId;
+    }
+  }
+
+  private async resolveUserDisplayName(userId: string): Promise<string> {
+    try {
+      const user = await this.usersService.findOne(userId);
+      return `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email || userId;
+    } catch {
+      return userId;
     }
   }
 
@@ -149,7 +175,28 @@ export class TripsService {
       throw new NotFoundException(`Trip with ID ${id} not found`);
     }
 
-    return { id: doc.id, ...doc.data() } as Trip;
+    const trip = { id: doc.id, ...doc.data() } as Trip & { organizerProfile?: any };
+
+    // Attempt to attach public organizer profile for client convenience
+    try {
+      if (trip.organizer) {
+        const profile = await this.usersService.getOrganizerPublicProfile(String(trip.organizer));
+        if (profile && profile.organizer) {
+          (trip as any).organizerProfile = profile.organizer;
+          // Attach aggregate stats if available
+          if (profile.overallRating !== undefined) {
+            (trip as any).organizerProfile.overallRating = profile.overallRating;
+          }
+          if (profile.totalReviews !== undefined) {
+            (trip as any).organizerProfile.totalReviews = profile.totalReviews;
+          }
+        }
+      }
+    } catch (err) {
+      // non-fatal - if users service fails, return trip without profile
+    }
+
+    return trip as Trip;
   }
 
   /**
@@ -168,6 +215,198 @@ export class TripsService {
     });
 
     return trips;
+  }
+
+  /**
+   * Get trips where the user participated but did not create the trip
+   */
+  async findParticipatedTrips(userId: string): Promise<Trip[]> {
+    const db = this.firebaseService.getFirestore();
+    const snapshot = await db.collection(this.collectionName).get();
+
+    const trips: Trip[] = [];
+
+    snapshot.forEach((doc) => {
+      const trip = { id: doc.id, ...doc.data() } as Trip;
+      const isCreator = trip.organizer === userId;
+      const hasParticipated = Array.isArray(trip.participants)
+        ? trip.participants.some((participant) => participant.parentUserId === userId)
+        : false;
+
+      if (!isCreator && hasParticipated) {
+        trips.push(trip);
+      }
+    });
+
+    return trips;
+  }
+
+  /**
+   * Cancel the current user's booking for a trip.
+   */
+  async cancelBooking(tripId: string, userId: string): Promise<Trip> {
+    const db = this.firebaseService.getFirestore();
+    const docRef = db.collection(this.collectionName).doc(tripId);
+    const doc = await docRef.get();
+
+    if (!doc.exists) {
+      throw new NotFoundException(`Trip with ID ${tripId} not found`);
+    }
+
+    const trip = { id: doc.id, ...doc.data() } as Trip;
+
+    if (trip.organizer === userId) {
+      throw new BadRequestException('Trip creators cannot cancel their own trip booking here.');
+    }
+
+    const existingParticipants = Array.isArray(trip.participants) ? trip.participants : [];
+    const matchedParticipants = existingParticipants.filter((participant) => participant.parentUserId === userId);
+
+    if (matchedParticipants.length === 0) {
+      throw new BadRequestException('You do not have an active booking for this trip.');
+    }
+
+    const updatedParticipants = existingParticipants.filter((participant) => participant.parentUserId !== userId);
+    const userName = await this.resolveUserDisplayName(userId);
+    const chatGroup = await this.chatGroupsService.findOneByTripId(tripId);
+    const cancelMessage = `${userName} said: Sorry, I am leaving the trip.`;
+
+    if (chatGroup) {
+      await this.chatMessagesService.create(chatGroup.id!, {
+        senderId: userId,
+        senderName: userName,
+        message: cancelMessage,
+      });
+    }
+
+    await docRef.update({
+      participants: updatedParticipants,
+      updatedAt: new Date(),
+    });
+
+    if (chatGroup) {
+      await this.chatGroupsService.removeMember(chatGroup.id!, userId);
+    }
+
+    await this.notificationsService.create({
+      userId: trip.organizer,
+      type: 'account-alert',
+      title: 'Booking canceled',
+      description: `${userName} canceled their booking for "${trip.tripName}".`,
+      tripId,
+      read: false,
+    });
+
+    const paymentsSnapshot = await db.collection('payments').where('tripId', '==', tripId).get();
+    const deletions: Array<Promise<unknown>> = [];
+
+    paymentsSnapshot.forEach((paymentDoc) => {
+      const data = paymentDoc.data() as Record<string, unknown>;
+      const paymentUserId = data.userId ?? data.parentUserId ?? data.buyerId ?? data.customerId ?? data.payerId;
+      if (paymentUserId === userId) {
+        deletions.push(paymentDoc.ref.delete());
+      }
+    });
+
+    await Promise.all(deletions);
+
+    return this.findOne(tripId);
+  }
+
+  async cancelTrip(tripId: string, userId: string, reason: string, userRole?: string): Promise<Trip> {
+    const db = this.firebaseService.getFirestore();
+    const docRef = db.collection(this.collectionName).doc(tripId);
+    const doc = await docRef.get();
+
+    if (!doc.exists) {
+      throw new NotFoundException(`Trip with ID ${tripId} not found`);
+    }
+
+    const trip = { id: doc.id, ...doc.data() } as Trip;
+    const normalizedReason = reason.trim();
+
+    if (!normalizedReason) {
+      throw new BadRequestException('Cancellation reason is required.');
+    }
+
+    const isAdmin = userRole === 'admin' || userRole === 'superadmin';
+    const isOrganizer = trip.organizer === userId;
+
+    if (!isOrganizer && !isAdmin) {
+      throw new BadRequestException('Only the organizer or an admin can cancel this trip.');
+    }
+
+    if (trip.status === TripStatus.CANCELLED) {
+      throw new BadRequestException('This trip has already been canceled.');
+    }
+
+    const existingParticipants = Array.isArray(trip.participants) ? trip.participants : [];
+    const notificationRecipientIds = Array.from(
+      new Set(
+        existingParticipants
+          .map((participant) => participant.parentUserId)
+          .filter((participantUserId): participantUserId is string => Boolean(participantUserId)),
+      ),
+    );
+
+    const userName = await this.resolveUserDisplayName(userId);
+    const chatGroup = await this.chatGroupsService.findOneByTripId(tripId);
+    const messageSenderId = chatGroup?.members?.includes(userId) ? userId : trip.organizer;
+    const cancellationMessage = `${userName} canceled the trip: ${normalizedReason}`;
+    const now = new Date();
+
+    await docRef.update({
+      status: TripStatus.CANCELLED,
+      statusReason: normalizedReason,
+      statusUpdatedBy: userId,
+      statusUpdatedByName: userName,
+      statusUpdatedAt: now,
+      updatedAt: now,
+    });
+
+    if (chatGroup) {
+      await this.chatMessagesService.create(chatGroup.id!, {
+        senderId: messageSenderId,
+        senderName: userName,
+        message: cancellationMessage,
+      });
+    }
+
+    await Promise.all(
+      notificationRecipientIds.map((participantUserId) =>
+        this.notificationsService.create({
+          userId: participantUserId,
+          type: 'account-alert',
+          title: 'Trip canceled',
+          description:
+            `The trip "${trip.tripName}" has been canceled. Reason: ${normalizedReason}` +
+            ' If you paid online, the refund will be handled by admin.',
+          tripId,
+          read: false,
+        }),
+      ),
+    );
+
+    const refundReviewAdmins = await this.usersService.findAllOrganizers();
+
+    await Promise.all(
+      refundReviewAdmins
+        .filter((admin) => admin.id && admin.id !== userId)
+        .map((admin) =>
+          this.notificationsService.create({
+            userId: admin.id!,
+            type: 'account-alert',
+            title: 'Refund review required',
+            description:
+              `Trip "${trip.tripName}" was canceled by ${userName}. ` +
+              'Please review any online payments and process refunds if required.',
+            tripId,
+            read: false,
+          }),
+        ),
+    );
+
+    return this.findOne(tripId);
   }
 
   /**
@@ -230,18 +469,26 @@ export class TripsService {
       }
     }
 
-    const updateData = {
+    const updateData: any = {
       ...updateTripDto,
-      photos: updateTripDto.photos,
-      coverImage:
-        updateTripDto.coverImage ??
-        (updateTripDto.photos && updateTripDto.photos.length > 0
-          ? updateTripDto.photos[0]
-          : undefined),
       updatedAt: new Date(),
     };
 
-    await db.collection(this.collectionName).doc(id).update(updateData);
+    if (updateTripDto.photos !== undefined) {
+      updateData.photos = updateTripDto.photos;
+    }
+
+    if (updateTripDto.coverImage !== undefined) {
+      updateData.coverImage = updateTripDto.coverImage;
+    } else if (updateTripDto.photos && updateTripDto.photos.length > 0) {
+      updateData.coverImage = updateTripDto.photos[0];
+    }
+
+    const cleanUpdateData = Object.fromEntries(
+      Object.entries(updateData).filter(([_, v]) => v !== undefined)
+    );
+
+    await db.collection(this.collectionName).doc(id).update(cleanUpdateData);
 
     return this.findOne(id);
   }
@@ -293,7 +540,7 @@ export class TripsService {
       throw new BadRequestException('This trip is not available for booking.');
     }
 
-    if (this.isTripExpired(trip.endDate)) {
+    if (this.isTripExpired(trip.endDate, trip.endTime)) {
       throw new BadRequestException('This trip has expired.');
     }
 
@@ -306,77 +553,90 @@ export class TripsService {
       throw new BadRequestException('This trip has been reserved and is no longer bookable.');
     }
 
-    const newParticipants: Participant[] = request.participants.map((participant) => ({
+    const isPublic = trip.tripCategory === TripCategory.PUBLIC_TRIP;
+    const participantStatus = isPublic ? 'accepted' : 'pending';
+
+    const bookingId = randomUUID();
+    let newParticipants: Participant[] = request.participants.map((participant) => ({
       participantId: participant.participantId ?? randomUUID(),
       parentUserId: participant.parentUserId ?? null,
       name: participant.name,
       gender: participant.gender,
       age: participant.age,
+      paymentMethod: selectedPaymentMethod as TripPaymentMethod,
+      status: participantStatus,
+      bookingId: bookingId,
       ...(participant.address !== undefined ? { address: participant.address } : {}),
       ...(participant.phone !== undefined ? { phone: participant.phone } : {}),
       ...(participant.email !== undefined ? { email: participant.email } : {}),
+      ...(participant.pickupLocation !== undefined ? { pickupLocation: participant.pickupLocation } : {}),
+      ...(participant.pickupDistanceKm !== undefined ? { pickupDistanceKm: participant.pickupDistanceKm } : {}),
+      ...(participant.pickupCost !== undefined ? { pickupCost: participant.pickupCost } : {}),
+      ...(participant.pickupTime !== undefined ? { pickupTime: participant.pickupTime } : {}),
     }));
 
     if (!trip.participants) {
       trip.participants = [];
     }
 
-    // Prevent duplicate bookings by the same user for the same trip
+    // Prevent duplicate bookings by the same user for the same trip (ignoring rejected ones)
     const existingParticipants = trip.participants || [];
+    const uniqueNewParticipants: Participant[] = [];
     for (const np of newParticipants) {
       if (np.parentUserId) {
-        const duplicate = existingParticipants.find((ep) => ep.parentUserId && ep.parentUserId === np.parentUserId);
+        if (np.parentUserId === trip.organizer) {
+          throw new BadRequestException('You cannot book a trip that you organized.');
+        }
+        const duplicate = existingParticipants.find((ep) => ep.parentUserId && ep.parentUserId === np.parentUserId && ep.status !== 'rejected');
         if (duplicate) {
+          if (category === TripCategory.PRIVATE_TRIP) {
+            continue; // Skip duplicates for private/on-demand trips
+          }
           throw new BadRequestException('You have already booked this trip.');
         }
       }
 
       if (np.email) {
-        const duplicateByEmail = existingParticipants.find((ep) => ep.email && ep.email === np.email);
+        const duplicateByEmail = existingParticipants.find((ep) => ep.email && ep.email === np.email && ep.status !== 'rejected');
         if (duplicateByEmail) {
+          if (category === TripCategory.PRIVATE_TRIP) {
+            continue; // Skip duplicates for private/on-demand trips
+          }
           throw new BadRequestException('A participant with this email has already been booked for this trip.');
         }
       }
+      uniqueNewParticipants.push(np);
     }
+    newParticipants = uniqueNewParticipants;
 
-    const nextParticipantCount = trip.participants.length + newParticipants.length;
+    const activeParticipantsCount = existingParticipants.filter((p) => p.status !== 'rejected').length;
+    const nextParticipantCount = activeParticipantsCount + newParticipants.length;
     if (trip.maxParticipants && nextParticipantCount > trip.maxParticipants) {
       throw new BadRequestException(
         `This trip can only accept ${trip.maxParticipants} participants. The request would exceed that limit.`,
       );
     }
 
-    // Category-specific restrictions: Family and Solo trips can only be booked once (one booking may contain multiple family members)
-    if (
-      category === TripCategory.FAMILY_TRIP_WITH_GUIDE ||
-      category === TripCategory.SOLO_TRIP_WITH_GUIDE
-    ) {
-      // If there are already participants, the trip is finished for booking
-      if ((trip.participants || []).length > 0) {
-        // If any of the new participants match existing participants by parentUserId or email,
-        // return a user-friendly message indicating they already booked this trip.
-        const alreadyBooked = newParticipants.some((np) => {
-          if (np.parentUserId) {
-            return existingParticipants.some((ep) => ep.parentUserId && ep.parentUserId === np.parentUserId);
-          }
-          if (np.email) {
-            return existingParticipants.some((ep) => ep.email && ep.email === np.email);
-          }
-          return false;
-        });
-
-        if (alreadyBooked) {
-          throw new BadRequestException('You have already booked this trip.');
-        }
-
+    // Public trips can only be booked once (one active booking may contain multiple participants)
+    if (category === TripCategory.PUBLIC_TRIP) {
+      if (activeParticipantsCount > 0) {
         throw new BadRequestException('This trip is no longer available for booking.');
       }
     }
 
     trip.participants.push(...newParticipants);
 
+    const updatePayload: any = {
+      participants: trip.participants,
+      updatedAt: new Date(),
+    };
+
     const bookingMemberIds = Array.from(
-      new Set(newParticipants.map((participant) => participant.parentUserId).filter((id): id is string => Boolean(id))),
+      new Set(
+        newParticipants
+          .map((p) => p.parentUserId)
+          .filter((uid): uid is string => Boolean(uid)),
+      ),
     );
 
     if (bookingMemberIds.length > 0) {
@@ -384,36 +644,52 @@ export class TripsService {
         tripId,
         name: trip.tripName,
         adminId: trip.organizer,
-        adminName: await this.resolveOrganizerName(trip.organizer as string | undefined),
+        adminName: await this.resolveOrganizerName(trip.organizer),
         description: `Discussion group for ${trip.tripName}`,
-        members: [trip.organizer, ...bookingMemberIds],
+        members: [trip.organizer],
       });
 
       await this.chatGroupsService.addMembers(chatGroup.id!, bookingMemberIds);
-    }
 
-    // If this booking reserves the trip (family or solo), mark reservation metadata
-    const updatePayload: any = {
-      participants: trip.participants,
-      updatedAt: new Date(),
-    };
-
-    if (category === TripCategory.FAMILY_TRIP_WITH_GUIDE) {
-      // Reserve for family: set reservedFor and reservedBy (use parentUserId of first participant if available)
-      const reservedBy = newParticipants[0]?.parentUserId ?? null;
-      updatePayload.reservedFor = 'family';
-      updatePayload.reservedByUserId = reservedBy;
-      updatePayload.reservedAt = new Date();
-    }
-
-    if (category === TripCategory.SOLO_TRIP_WITH_GUIDE) {
-      const reservedBy = newParticipants[0]?.parentUserId ?? null;
-      updatePayload.reservedFor = 'solo';
-      updatePayload.reservedByUserId = reservedBy;
-      updatePayload.reservedAt = new Date();
+      // Send welcome message(s) from the chat admin (trip organizer)
+      const adminName = await this.resolveOrganizerName(trip.organizer);
+      for (const userId of bookingMemberIds) {
+        try {
+          const memberName = await this.resolveUserDisplayName(userId);
+          await this.chatMessagesService.create(chatGroup.id!, {
+            senderId: trip.organizer,
+            senderName: adminName,
+            message: `Hello, welcome ${memberName} to the chat group!`,
+          });
+        } catch (msgErr) {
+          console.error('Failed to send welcome message for user:', userId, msgErr);
+        }
+      }
     }
 
     await db.collection(this.collectionName).doc(tripId).update(updatePayload);
+
+    // Send notification to the organizer/guide
+    const bookerName = newParticipants[0]?.name || 'Someone';
+    if (isPublic) {
+      await this.notificationsService.create({
+        userId: trip.organizer,
+        type: 'account-alert',
+        title: 'Trip Booked',
+        description: `${bookerName} booked and paid for your trip "${trip.tripName}".`,
+        tripId,
+        read: false,
+      });
+    } else {
+      await this.notificationsService.create({
+        userId: trip.organizer,
+        type: 'join-request',
+        title: 'New Booking Request',
+        description: `${bookerName} requested to participate in your trip "${trip.tripName}".`,
+        tripId,
+        read: false,
+      });
+    }
 
     return this.findOne(tripId);
   }
@@ -426,6 +702,127 @@ export class TripsService {
       participants: [participant],
     });
   }
+
+  /**
+   * Update status of multiple participants (approve/reject)
+   */
+  async updateParticipantsStatus(
+    tripId: string,
+    participantIds: string[],
+    status: 'accepted' | 'rejected',
+  ): Promise<Trip> {
+    const db = this.firebaseService.getFirestore();
+    const docRef = db.collection(this.collectionName).doc(tripId);
+    const doc = await docRef.get();
+
+    if (!doc.exists) {
+      throw new NotFoundException(`Trip with ID ${tripId} not found`);
+    }
+
+    const trip = { id: doc.id, ...doc.data() } as Trip;
+    const participants = Array.isArray(trip.participants) ? trip.participants : [];
+
+    let updatedCount = 0;
+    const matchedParticipants: Participant[] = [];
+    const updatedParticipants = participants.map((p) => {
+      if (p.participantId && participantIds.includes(p.participantId)) {
+        updatedCount++;
+        matchedParticipants.push(p);
+        return { ...p, status };
+      }
+      return p;
+    });
+
+    if (updatedCount === 0) {
+      throw new NotFoundException('No matching participants found on this trip.');
+    }
+
+    const updatePayload: any = {
+      participants: updatedParticipants,
+      updatedAt: new Date(),
+    };
+
+    const firstMatched = matchedParticipants[0];
+
+    if (status === 'accepted') {
+      // Add unique parentUserIds to the chat group
+      const bookingMemberIds = Array.from(
+        new Set(
+          matchedParticipants
+            .map((p) => p.parentUserId)
+            .filter((uid): uid is string => Boolean(uid)),
+        ),
+      );
+
+      if (bookingMemberIds.length > 0) {
+        const chatGroup = await this.chatGroupsService.ensureTripChatGroup({
+          tripId,
+          name: trip.tripName,
+          adminId: trip.organizer,
+          adminName: await this.resolveOrganizerName(trip.organizer),
+          description: `Discussion group for ${trip.tripName}`,
+          members: [trip.organizer],
+        });
+
+        await this.chatGroupsService.addMembers(chatGroup.id!, bookingMemberIds);
+
+        // Send welcome message(s) from the chat admin (trip organizer)
+        const adminName = await this.resolveOrganizerName(trip.organizer);
+        for (const userId of bookingMemberIds) {
+          try {
+            const memberName = await this.resolveUserDisplayName(userId);
+            await this.chatMessagesService.create(chatGroup.id!, {
+              senderId: trip.organizer,
+              senderName: adminName,
+              message: `Hello, welcome ${memberName} to the chat group!`,
+            });
+          } catch (msgErr) {
+            console.error('Failed to send welcome message for user:', userId, msgErr);
+          }
+        }
+      }
+
+
+
+      // Notify user(s)
+      const notifyPromises = bookingMemberIds.map((userId) =>
+        this.notificationsService.create({
+          userId,
+          type: 'account-alert',
+          title: 'Booking Accepted',
+          description: `Your booking request for "${trip.tripName}" has been accepted by the guide.`,
+          tripId,
+          read: false,
+        }),
+      );
+      await Promise.all(notifyPromises);
+    } else if (status === 'rejected') {
+      const bookingMemberIds = Array.from(
+        new Set(
+          matchedParticipants
+            .map((p) => p.parentUserId)
+            .filter((uid): uid is string => Boolean(uid)),
+        ),
+      );
+
+      // Notify user(s)
+      const notifyPromises = bookingMemberIds.map((userId) =>
+        this.notificationsService.create({
+          userId,
+          type: 'account-alert',
+          title: 'Booking Rejected',
+          description: `Your booking request for "${trip.tripName}" was not accepted.`,
+          tripId,
+          read: false,
+        }),
+      );
+      await Promise.all(notifyPromises);
+    }
+
+    await docRef.update(updatePayload);
+    return this.findOne(tripId);
+  }
+
 
   /**
    * Update a specific participant on a trip
@@ -505,25 +902,22 @@ export class TripsService {
     filters: ApprovedPublicTripsQueryDto,
   ): Promise<TripCardDto[]> {
     const approvedTrips = await this.findAll(TripStatus.APPROVED);
+    const now = new Date();
 
     const filtered = approvedTrips.filter((trip) => {
       if (trip.tripCategory === TripCategory.PRIVATE_TRIP) {
         return false;
       }
 
-      const bookedCount = (trip.participants || []).length;
-      const reservedFor = (trip as any).reservedFor as string | undefined;
-      const isFamilyOrSolo =
-        trip.tripCategory === TripCategory.FAMILY_TRIP_WITH_GUIDE ||
-        trip.tripCategory === TripCategory.SOLO_TRIP_WITH_GUIDE;
-
-      // Family and solo trips disappear from home once they have any booking.
-      if (isFamilyOrSolo && (bookedCount > 0 || reservedFor === 'family' || reservedFor === 'solo')) {
+      const endDate = trip.endDate ? new Date(`${trip.endDate}T23:59:59.999Z`) : null;
+      if (!endDate || Number.isNaN(endDate.getTime()) || endDate.getTime() < now.getTime()) {
         return false;
       }
 
-      // Stranger trips stay public until they are fully booked.
-      if (trip.tripCategory === TripCategory.STRANGERS_TRIP_WITH_GUIDE && trip.maxParticipants && bookedCount >= trip.maxParticipants) {
+      const bookedCount = (trip.participants || []).filter((p) => p.status !== 'rejected').length;
+
+      // Public trips disappear from home once they have any booking.
+      if (trip.tripCategory === TripCategory.PUBLIC_TRIP && bookedCount > 0) {
         return false;
       }
 
@@ -531,7 +925,10 @@ export class TripsService {
         return false;
       }
 
-      if (filters.tripName && trip.tripName !== filters.tripName) {
+      if (
+        filters.tripName &&
+        !String(trip.tripName || '').toLowerCase().includes(String(filters.tripName).toLowerCase())
+      ) {
         return false;
       }
 
@@ -539,7 +936,10 @@ export class TripsService {
         return false;
       }
 
-      if (filters.startLocation && trip.startLocation !== filters.startLocation) {
+      if (
+        filters.startLocation &&
+        !String(trip.startLocation || '').toLowerCase().includes(String(filters.startLocation).toLowerCase())
+      ) {
         return false;
       }
 
@@ -562,11 +962,42 @@ export class TripsService {
       return true;
     });
 
+    const organizerRatingCache = new Map<string, number | null>();
+
     const results = await Promise.all(
       filtered.map(async (trip) => {
         const mainDestNames = (trip.mainDestinations || []).map((d: any) => d.name || d);
         const bookedCount = (trip.participants || []).length;
         const organizerName = await this.resolveOrganizerName(trip.organizer as string | undefined);
+
+        const db = this.firebaseService.getFirestore();
+        const reviewsSnapshot = await db
+          .collection('reviews')
+          .where('tripId', '==', trip.id)
+          .get();
+
+        let totalRating = 0;
+        let reviewCount = 0;
+        reviewsSnapshot.forEach((rDoc) => {
+          const rData = rDoc.data() || {};
+          if (typeof rData.rating === 'number') {
+            totalRating += rData.rating;
+            reviewCount++;
+          }
+        });
+        const tripRating = reviewCount > 0 ? parseFloat((totalRating / reviewCount).toFixed(1)) : null;
+
+        // Calculate organizer rating using cache
+        const organizerId = trip.organizer;
+        let organizerRating: number | null = null;
+        if (organizerId) {
+          if (organizerRatingCache.has(organizerId)) {
+            organizerRating = organizerRatingCache.get(organizerId)!;
+          } else {
+            organizerRating = await this.getOrganizerOverallRating(organizerId);
+            organizerRatingCache.set(organizerId, organizerRating);
+          }
+        }
 
         return {
           id: trip.id as string,
@@ -581,12 +1012,55 @@ export class TripsService {
           maxParticipants: trip.maxParticipants ?? 0,
           bookedCount,
           organizerName: organizerName,
-          rating: (trip as any).rating,
+          organizer: trip.organizer,
+          rating: tripRating,
+          organizerRating,
           status: trip.status,
         } as TripCardDto;
       }),
     );
 
     return results;
+  }
+
+  async getOrganizerOverallRating(organizerId: string): Promise<number | null> {
+    const db = this.firebaseService.getFirestore();
+    const tripsSnapshot = await db
+      .collection(this.collectionName)
+      .where('organizer', '==', organizerId)
+      .get();
+
+    const tripIds: string[] = [];
+    tripsSnapshot.forEach((doc) => {
+      const data = doc.data() || {};
+      if (data.tripCategory !== 'Private trip') {
+        tripIds.push(doc.id);
+      }
+    });
+
+    if (tripIds.length === 0) {
+      return null;
+    }
+
+    let totalRating = 0;
+    let reviewCount = 0;
+
+    const reviewSnapshots = await Promise.all(
+      tripIds.map(async (tripId) => {
+        return db.collection('reviews').where('tripId', '==', tripId).get();
+      }),
+    );
+
+    reviewSnapshots.forEach((snapshot) => {
+      snapshot.forEach((rDoc) => {
+        const rData = rDoc.data() || {};
+        if (typeof rData.rating === 'number') {
+          totalRating += rData.rating;
+          reviewCount++;
+        }
+      });
+    });
+
+    return reviewCount > 0 ? parseFloat((totalRating / reviewCount).toFixed(1)) : null;
   }
 }
