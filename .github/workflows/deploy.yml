@@ -36,4 +36,5 @@ jobs:
           --image asia-south1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/tripweaver-repo/tripweaver:latest \
           --platform managed \
           --region asia-south1 \
-          --allow-unauthenticated
+          --allow-unauthenticated \
+          --set-secrets FIREBASE_SERVICE_ACCOUNT=firebase-service-account:latest
