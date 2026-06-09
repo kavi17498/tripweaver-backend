@@ -1,7 +1,6 @@
 import { Module, Global } from '@nestjs/common';
 import * as admin from 'firebase-admin';
 import { FirebaseService } from './firebase.service';
-const serviceAccount = require('../config/ser.json') as admin.ServiceAccount;
 
 @Global()
 @Module({
@@ -9,10 +8,29 @@ const serviceAccount = require('../config/ser.json') as admin.ServiceAccount;
     {
       provide: 'FIREBASE_ADMIN',
       useFactory: () => {
+        const projectId = process.env.FIREBASE_PROJECT_ID;
+        const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
+        const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+
+        if (!projectId || !privateKey || !clientEmail) {
+          throw new Error(
+            'Firebase service account credentials missing. Set FIREBASE_PROJECT_ID, FIREBASE_PRIVATE_KEY, and FIREBASE_CLIENT_EMAIL in be/.env.',
+          );
+        }
+
+        const serviceAccount: admin.ServiceAccount = {
+          projectId,
+          privateKey,
+          clientEmail,
+        };
+
+        const storageBucket = process.env.FIREBASE_STORAGE_BUCKET || 'tripwaver-c64f5.firebasestorage.app';
+
         const app = admin.initializeApp({
-          credential: admin.credential.cert(serviceAccount as admin.ServiceAccount),
-          storageBucket: 'your-project-id.appspot.com', // optional
+          credential: admin.credential.cert(serviceAccount),
+          storageBucket: storageBucket,
         });
+
         try {
           app.firestore().settings({ ignoreUndefinedProperties: true });
         } catch (e) {
